@@ -386,11 +386,66 @@ mod net_authority {
         Ok(())
     }
 
-    pub fn approve_merchant(_ctx: Context<ApproveMerchant>) -> ProgramResult {
+    pub fn approve_merchant(ctx: Context<ApproveMerchant>,
+        inp_root_nonce: u8,
+        inp_fees_bps: u32,
+    ) -> ProgramResult {
+        let acc_admn = &ctx.accounts.merchant_admin.to_account_info(); // Merchant admin
+        let acc_root = &ctx.accounts.root_data.to_account_info();
+        let acc_auth = &ctx.accounts.auth_data.to_account_info();
+
+        // Verify program data
+        let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
+            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
+        verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
+        verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
+
+        // Check for ManagerAdmin authority
+        let admin_role = has_role(&acc_auth, Role::MerchantAdmin, acc_admn.key);
+        if admin_role.is_err() {
+            msg!("Not merchant admin");
+            return Err(ErrorCode::AccessDenied.into());
+        }
+
+        // Create approval account
+        let acc_aprv = &mut ctx.accounts.merchant_approval;
+        acc_aprv.active = true;
+        acc_aprv.merchant_key = *ctx.accounts.merchant_key.to_account_info().key;
+        acc_aprv.token_mint = *ctx.accounts.token_mint.to_account_info().key;
+        acc_aprv.fees_account = *ctx.accounts.fees_account.to_account_info().key;
+        acc_aprv.fees_bps = inp_fees_bps;
+
         Ok(())
     }
 
-    pub fn update_merchant(_ctx: Context<UpdateMerchant>) -> ProgramResult {
+    pub fn update_merchant(_ctx: Context<UpdateMerchant>
+        inp_root_nonce: u8,
+        inp_fees_bps: u32,
+        inp_active: bool,
+    ) -> ProgramResult {
+        let acc_admn = &ctx.accounts.merchant_admin.to_account_info(); // Manager admin
+        let acc_root = &ctx.accounts.root_data.to_account_info();
+        let acc_auth = &ctx.accounts.auth_data.to_account_info();
+
+        // Verify program data
+        let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
+            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
+        verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
+        verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
+
+        // Check for ManagerAdmin authority
+        let admin_role = has_role(&acc_auth, Role::ManagerAdmin, acc_admn.key);
+        if admin_role.is_err() {
+            msg!("Not merchant admin");
+            return Err(ErrorCode::AccessDenied.into());
+        }
+
+        // Update approval account
+        let acc_aprv = &mut ctx.accounts.merchant_approval;
+        acc_aprv.active = inp_active;
+        acc_aprv.fees_account = *ctx.accounts.fees_account.to_account_info().key;
+        acc_aprv.fees_bps = inp_fees_bps;
+
         Ok(())
     }
 
@@ -422,7 +477,31 @@ mod net_authority {
         Ok(())
     }
 
-    pub fn update_manager(ctx: Context<UpdateManager>) -> ProgramResult {
+    pub fn update_manager(ctx: Context<UpdateManager>,
+        inp_root_nonce: u8,
+        inp_active: bool,
+    ) -> ProgramResult {
+        let acc_admn = &ctx.accounts.manager_admin.to_account_info(); // Manager admin
+        let acc_root = &ctx.accounts.root_data.to_account_info();
+        let acc_auth = &ctx.accounts.auth_data.to_account_info();
+
+        // Verify program data
+        let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
+            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
+        verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
+        verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
+
+        // Check for ManagerAdmin authority
+        let admin_role = has_role(&acc_auth, Role::ManagerAdmin, acc_admn.key);
+        if admin_role.is_err() {
+            msg!("Not manager admin");
+            return Err(ErrorCode::AccessDenied.into());
+        }
+
+        // Update approval account
+        let acc_aprv = &mut ctx.accounts.manager_approval;
+        acc_aprv.active = inp_active;
+
         Ok(())
     }
 }
@@ -452,12 +531,26 @@ pub struct UpdateRBAC<'info> {
 
 #[derive(Accounts)]
 pub struct ApproveMerchant<'info> {
-    program_data: AccountInfo<'info>,
+    pub root_data: ProgramAccount<'info, RootData>,
+    pub auth_data: AccountInfo<'info>,
+    #[account(signer)]
+    pub merchant_admin: AccountInfo<'info>,
+    #[account(init)]
+    pub merchant_approval: ProgramAccount<'info, MerchantApproval>,
+    pub merchant_key: AccountInfo<'info>,
+    pub token_mint: AccountInfo<'info>,
+    pub fees_account: AccountInfo<'info>,
 }
 
 #[derive(Accounts)]
 pub struct UpdateMerchant<'info> {
-    program_data: AccountInfo<'info>,
+    pub root_data: ProgramAccount<'info, RootData>,
+    pub auth_data: AccountInfo<'info>,
+    #[account(signer)]
+    pub merchant_admin: AccountInfo<'info>,
+    #[account(mut)]
+    pub merchant_approval: ProgramAccount<'info, MerchantApproval>,
+    pub fees_account: AccountInfo<'info>,
 }
 
 #[derive(Accounts)]
