@@ -1,17 +1,22 @@
-use uuid::Uuid;
+//use uuid::Uuid;
 use std::{ mem::size_of, io::Cursor };
 use bytemuck::{ Pod, Zeroable };
 use byte_slice_cast::*;
 use num_enum::TryFromPrimitive;
 use anchor_lang::prelude::*;
-use anchor_spl::token::{ self, Transfer, TokenAccount, Mint, Approve };
 use solana_program::{
     program::{ invoke_signed },
     account_info::AccountInfo,
     system_instruction,
 };
 
-pub const MAX_RBAC: u32 = 512;
+extern crate slab_alloc;
+use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, SlabVec };
+
+extern crate decode_account;
+use decode_account::parse_bpf_loader::{ parse_bpf_upgradeable_loader, BpfUpgradeableLoaderAccountType };
+
+pub const MAX_RBAC: u32 = 1024;
 
 #[repr(u16)]
 #[derive(PartialEq, Debug, Eq, Copy, Clone)]
@@ -30,6 +35,7 @@ pub enum Approval {
 #[repr(u32)]
 #[derive(PartialEq, Debug, Eq, Copy, Clone, TryFromPrimitive)]
 pub enum Role {             // Role-based access control:
+    NetworkAdmin,           // Can create/modify other admins (program owner is always a NetworkAdmin)
     ManagerAdmin,           // Can create/modify manager approvals (processes subscriptions)
     MerchantAdmin,          // Can create/modify merchant approvals (receives subscription payments)
 }
@@ -37,7 +43,7 @@ pub enum Role {             // Role-based access control:
 #[derive(Copy, Clone)]
 #[repr(packed)]
 pub struct UserRBAC {
-    pub status: Status,
+    pub active: bool,
     pub user_key: Pubkey,
     pub role: Role,
 }
@@ -45,12 +51,12 @@ unsafe impl Zeroable for UserRBAC {}
 unsafe impl Pod for UserRBAC {}
 
 impl UserRBAC {
-    pub fn status(&self) -> Status {
-        self.status
+    pub fn active(&self) -> bool {
+        self.active
     }
 
-    pub fn set_status(&mut self, new_status: Status) {
-        self.status = new_status
+    pub fn set_active(&mut self, new_status: bool) {
+        self.active = new_status
     }
 
     pub fn user_key(&self) -> Pubkey {
@@ -119,17 +125,84 @@ fn verify_matching_accounts(left: &Pubkey, right: &Pubkey, error_msg: Option<Str
     Ok(())
 }
 
+#[inline]
+fn index_datatype(data_type: DT) -> u16 {  // Maps only
+    match data_type {
+        DT::UserRBAC => DT::UserRBAC as u16,
+        _ => { panic!("Invalid datatype") },
+    }
+}
+
+#[inline]
+fn map_len(data_type: DT) -> u32 {
+    match data_type {
+        DT::UserRBAC => MAX_RBAC,
+        _ => 0,
+    }
+}
+
+#[inline]
+fn map_datatype(data_type: DT) -> u16 {  // Maps only
+    match data_type {
+        DT::UserRBAC => DT::UserRBACMap as u16,
+        _ => { panic!("Invalid datatype") },
+    }
+}
+
+#[inline]
+fn map_get(pt: &mut SlabPageAlloc, data_type: DT, key: u128) -> Option<u32> {
+    let cm = CritMap { slab: pt, type_id: map_datatype(data_type), capacity: map_len(data_type) };
+    let rf = cm.get_key(key);
+    match rf {
+        None => None,
+        Some(res) => Some(res.data()),
+    }
+}
+
+#[inline]
+fn map_set(pt: &mut SlabPageAlloc, data_type: DT, key: u128, data: u32) {
+    let mut cm = CritMap { slab: pt, type_id: map_datatype(data_type), capacity: map_len(data_type) };
+    let node = LeafNode::new(key, data);
+    cm.insert_leaf(&node).expect("Failed to insert leaf");
+}
+
+#[inline]
+fn next_index(pt: &mut SlabPageAlloc, data_type: DT) -> u32 {
+    let svec = pt.header_mut::<SlabVec>(index_datatype(data_type));
+    svec.next_index()
+}
+
+fn has_role(acc_auth: &AccountInfo, role: Role, key: &Pubkey) -> ProgramResult {
+    let auth_data: &mut [u8] = &mut acc_auth.try_borrow_mut_data()?;
+    let rd = SlabPageAlloc::new(auth_data);
+    let authhash: u128 = CritMap::bytes_hash([[role as u32].as_byte_slice(), key.as_ref()].concat().as_slice());
+    let authrec = map_get(rd, DT::UserRBAC, authhash);
+    if ! authrec.is_some() {
+        //msg!("Role not found");
+        return Err(ErrorCode::AccessDenied.into());
+    }
+    let urec = rd.index::<UserRBAC>(DT::UserRBAC as u16, authrec.unwrap() as usize);
+    if ! urec.active() {
+        //msg!("Role revoked");
+        return Err(ErrorCode::AccessDenied.into());
+    }
+    Ok(())
+}
+
 #[program]
 mod net_authority {
     use super::*;
 
     pub fn initialize(ctx: Context<Initialize>,
-        inp_root_nonce: u8
+        inp_root_size: u64,
+        inp_root_rent: u64
     ) -> ProgramResult {
-        let acc_prog = &ctx.accounts.program.to_account_info();
-        let acc_pdat = &ctx.accounts.program_data.to_account_info();
-        let acc_user = &ctx.accounts.program_admin.to_account_info();
-        verify_program_owner(ctx.program_id, &acc_prog, &acc_pdat, &acc_user)?;
+        {
+            let acc_prog = &ctx.accounts.program.to_account_info();
+            let acc_pdat = &ctx.accounts.program_data.to_account_info();
+            let acc_user = &ctx.accounts.program_admin.to_account_info();
+            verify_program_owner(ctx.program_id, &acc_prog, &acc_pdat, &acc_user)?;
+        }
         let av = ctx.remaining_accounts;
         let funder_info = av.get(0).unwrap();
         let data_account_info = av.get(1).unwrap();
@@ -140,19 +213,19 @@ mod net_authority {
         );
         if data_account_address != *data_account_info.key {
             msg!("Invalid root data account");
-            return Err(ProgramError::InvalidDerivedAccount);
+            return Err(ErrorCode::InvalidDerivedAccount.into());
         }
         let account_signer_seeds: &[&[_]] = &[
             ctx.program_id.as_ref(),
-            &[inp_root_nonce],
+            &[bump_seed],
         ];
         msg!("Create root data account");
         invoke_signed(
             &system_instruction::create_account(
                 funder_info.key,
                 data_account_info.key,
-                root_rent,
-                root_size,
+                inp_root_rent,
+                inp_root_size,
                 ctx.program_id
             ),
             &[
@@ -168,8 +241,8 @@ mod net_authority {
             root_authority: *acc_auth.key,
         };
         let mut root_data = acc_root.try_borrow_mut_data()?;
-        let mut root_dst: &mut [u8] = &mut root_data;
-        let mut root_crs = std::io::Cursor::new(root_dst);
+        let root_dst: &mut [u8] = &mut root_data;
+        let mut root_crs = Cursor::new(root_dst);
         ra.try_serialize(&mut root_crs)?;
 
         let auth_data: &mut[u8] = &mut acc_auth.try_borrow_mut_data()?;
@@ -180,23 +253,172 @@ mod net_authority {
         Ok(())
     }
 
-    pub fn grant(ctx: Context<Grant>) -> ProgramResult {
+    pub fn grant(ctx: Context<UpdateRBAC>,
+        inp_root_nonce: u8,
+        inp_role: u32,
+    ) -> ProgramResult {
+        let acc_admn = &ctx.accounts.program_admin.to_account_info(); // Program owner or network admin
+        let acc_root = &ctx.accounts.root_data.to_account_info();
+        let acc_auth = &ctx.accounts.auth_data.to_account_info();
+        let acc_rbac = &ctx.accounts.rbac_user.to_account_info();
+
+        // Check for NetworkAdmin authority
+        let admin_role = has_role(&acc_auth, Role::NetworkAdmin, acc_admn.key);
+        let mut program_owner: bool = false;
+        if admin_role.is_err() {
+            let acc_prog = &ctx.accounts.program.to_account_info();
+            let acc_pdat = &ctx.accounts.program_data.to_account_info();
+            verify_program_owner(ctx.program_id, &acc_prog, &acc_pdat, &acc_admn)?;
+            program_owner = true;
+        }
+
+        // Verify specified role
+        let role_item = Role::try_from_primitive(inp_role);
+        if role_item.is_err() {
+            msg!("Invalid role: {}", inp_role.to_string());
+            return Err(ErrorCode::InvalidParameters.into());
+        }
+        let role = role_item.unwrap();
+        if role == Role::NetworkAdmin && ! program_owner {
+            msg!("Reserved for program owner");
+            return Err(ErrorCode::AccessDenied.into());
+        }
+
+        // Verify not assigning roles to self
+        if *acc_admn.key == *acc_rbac.key {
+            msg!("Cannot grant roles to self");
+            return Err(ErrorCode::AccessDenied.into());
+        }
+
+        // Verify program data
+        let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
+            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
+        verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
+        verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
+
+        let auth_data: &mut[u8] = &mut acc_auth.try_borrow_mut_data()?;
+        let rd = SlabPageAlloc::new(auth_data);
+        let authhash: u128 = CritMap::bytes_hash([[role as u32].as_byte_slice(), acc_rbac.key.as_ref()].concat().as_slice());
+
+        // Check if record exists
+        let authrec = map_get(rd, DT::UserRBAC, authhash);
+        if authrec.is_some() {
+            // Check if record is active
+            let rec_idx = authrec.unwrap() as usize;
+            let urec = rd.index_mut::<UserRBAC>(DT::UserRBAC as u16, rec_idx);
+            if urec.active() {
+                msg!("Role already active");
+            } else {
+                urec.set_active(true);
+                msg!("Role resumed");
+            }
+        } else {
+            // Add new record
+            let rbac_idx = next_index(rd, DT::UserRBAC);
+            let ur = UserRBAC {
+                active: true,
+                user_key: *acc_rbac.key,
+                role: role,
+            };
+            *rd.index_mut(DT::UserRBAC as u16, rbac_idx as usize) = ur;
+            map_set(rd, DT::UserRBAC, authhash, rbac_idx);
+            msg!("Role granted");
+        }
         Ok(())
     }
 
-    pub fn revoke(ctx: Context<Revoke>) -> ProgramResult {
+    pub fn revoke(ctx: Context<UpdateRBAC>,
+        inp_root_nonce: u8,
+        inp_role: u32,
+    ) -> ProgramResult {
+        let acc_admn = &ctx.accounts.program_admin.to_account_info(); // Program owner or network admin
+        let acc_root = &ctx.accounts.root_data.to_account_info();
+        let acc_auth = &ctx.accounts.auth_data.to_account_info();
+        let acc_rbac = &ctx.accounts.rbac_user.to_account_info();
+
+        // Check for NetworkAdmin authority
+        let admin_role = has_role(&acc_auth, Role::NetworkAdmin, acc_admn.key);
+        let mut program_owner: bool = false;
+        if admin_role.is_err() {
+            let acc_prog = &ctx.accounts.program.to_account_info();
+            let acc_pdat = &ctx.accounts.program_data.to_account_info();
+            verify_program_owner(ctx.program_id, &acc_prog, &acc_pdat, &acc_admn)?;
+            program_owner = true;
+        }
+
+        // Verify specified role
+        let role_item = Role::try_from_primitive(inp_role);
+        if role_item.is_err() {
+            msg!("Invalid role: {}", inp_role.to_string());
+            return Err(ErrorCode::InvalidParameters.into());
+        }
+        let role = role_item.unwrap();
+        if role == Role::NetworkAdmin && ! program_owner {
+            msg!("Reserved for program owner");
+            return Err(ErrorCode::AccessDenied.into());
+        }
+
+        // Verify program data
+        let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
+            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
+        verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
+        verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
+
+        let auth_data: &mut[u8] = &mut acc_auth.try_borrow_mut_data()?;
+        let rd = SlabPageAlloc::new(auth_data);
+        let authhash: u128 = CritMap::bytes_hash([[role as u32].as_byte_slice(), acc_rbac.key.as_ref()].concat().as_slice());
+
+        // Check if record exists
+        let authrec = map_get(rd, DT::UserRBAC, authhash);
+        if authrec.is_some() {
+            // Check if record is active
+            let rec_idx = authrec.unwrap() as usize;
+            let urec = rd.index_mut::<UserRBAC>(DT::UserRBAC as u16, rec_idx);
+            if urec.active() {
+                urec.set_active(false);
+                msg!("Role revoked");
+            } else {
+                msg!("Role already revoked");
+            }
+        } else {
+            msg!("Role not found");
+        }
         Ok(())
     }
 
-    pub fn approve_merchant(ctx: Context<ApproveMerchant>) -> ProgramResult {
+    pub fn approve_merchant(_ctx: Context<ApproveMerchant>) -> ProgramResult {
         Ok(())
     }
 
-    pub fn update_merchant(ctx: Context<UpdateMerchant>) -> ProgramResult {
+    pub fn update_merchant(_ctx: Context<UpdateMerchant>) -> ProgramResult {
         Ok(())
     }
 
-    pub fn approve_manager(ctx: Context<ApproveManager>) -> ProgramResult {
+    pub fn approve_manager(ctx: Context<ApproveManager>,
+        inp_root_nonce: u8,
+    ) -> ProgramResult {
+        let acc_admn = &ctx.accounts.manager_admin.to_account_info(); // Manager admin
+        let acc_root = &ctx.accounts.root_data.to_account_info();
+        let acc_auth = &ctx.accounts.auth_data.to_account_info();
+
+        // Verify program data
+        let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
+            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
+        verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
+        verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
+
+        // Check for ManagerAdmin authority
+        let admin_role = has_role(&acc_auth, Role::ManagerAdmin, acc_admn.key);
+        if admin_role.is_err() {
+            msg!("Not manager admin");
+            return Err(ErrorCode::AccessDenied.into());
+        }
+
+        // Create approval account
+        let acc_aprv = &mut ctx.accounts.manager_approval;
+        acc_aprv.active = true;
+        acc_aprv.manager_key = *ctx.accounts.manager_key.to_account_info().key;
+
         Ok(())
     }
 
@@ -207,30 +429,56 @@ mod net_authority {
 
 #[derive(Accounts)]
 pub struct Initialize<'info> {
+    pub root_data: AccountInfo<'info>,
+    #[account(init)]
+    pub auth_data: AccountInfo<'info>,
+    pub program: AccountInfo<'info>,
+    pub program_data: AccountInfo<'info>,
+    #[account(signer)]
+    pub program_admin: AccountInfo<'info>,
 }
 
 #[derive(Accounts)]
-pub struct Grant<'info> {
-}
-
-#[derive(Accounts)]
-pub struct Revoke<'info> {
+pub struct UpdateRBAC<'info> {
+    pub root_data: ProgramAccount<'info, RootData>,
+    #[account(mut)]
+    pub auth_data: AccountInfo<'info>,
+    pub program: AccountInfo<'info>,
+    pub program_data: AccountInfo<'info>,
+    #[account(signer)]
+    pub program_admin: AccountInfo<'info>,
+    pub rbac_user: AccountInfo<'info>,
 }
 
 #[derive(Accounts)]
 pub struct ApproveMerchant<'info> {
+    program_data: AccountInfo<'info>,
 }
 
 #[derive(Accounts)]
 pub struct UpdateMerchant<'info> {
+    program_data: AccountInfo<'info>,
 }
 
 #[derive(Accounts)]
 pub struct ApproveManager<'info> {
+    pub root_data: ProgramAccount<'info, RootData>,
+    pub auth_data: AccountInfo<'info>,
+    #[account(signer)]
+    pub manager_admin: AccountInfo<'info>,
+    #[account(init)]
+    pub manager_approval: ProgramAccount<'info, ManagerApproval>,
+    pub manager_key: AccountInfo<'info>,
 }
 
 #[derive(Accounts)]
 pub struct UpdateManager<'info> {
+    pub root_data: ProgramAccount<'info, RootData>,
+    pub auth_data: AccountInfo<'info>,
+    #[account(signer)]
+    pub manager_admin: AccountInfo<'info>,
+    #[account(mut)]
+    pub manager_approval: ProgramAccount<'info, ManagerApproval>,
 }
 
 #[account]
@@ -265,6 +513,15 @@ pub struct ManagerApproval {
 
 #[error]
 pub enum ErrorCode {
+    #[msg("Access denied")]
+    AccessDenied,
+    #[msg("Invalid parameters")]
+    InvalidParameters,
+    #[msg("Invalid account")]
+    InvalidAccount,
     #[msg("Invalid derived account")]
     InvalidDerivedAccount,
+    #[msg("Overflow")]
+    Overflow,
+
 }
