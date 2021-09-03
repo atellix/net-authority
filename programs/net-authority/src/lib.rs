@@ -400,7 +400,7 @@ mod net_authority {
         verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
         verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
 
-        // Check for ManagerAdmin authority
+        // Check for MerchantAdmin authority
         let admin_role = has_role(&acc_auth, Role::MerchantAdmin, acc_admn.key);
         if admin_role.is_err() {
             msg!("Not merchant admin");
@@ -418,12 +418,12 @@ mod net_authority {
         Ok(())
     }
 
-    pub fn update_merchant(_ctx: Context<UpdateMerchant>
+    pub fn update_merchant(ctx: Context<UpdateMerchant>,
         inp_root_nonce: u8,
         inp_fees_bps: u32,
         inp_active: bool,
     ) -> ProgramResult {
-        let acc_admn = &ctx.accounts.merchant_admin.to_account_info(); // Manager admin
+        let acc_admn = &ctx.accounts.merchant_admin.to_account_info(); // Merchant admin
         let acc_root = &ctx.accounts.root_data.to_account_info();
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
 
@@ -433,8 +433,8 @@ mod net_authority {
         verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
         verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
 
-        // Check for ManagerAdmin authority
-        let admin_role = has_role(&acc_auth, Role::ManagerAdmin, acc_admn.key);
+        // Check for MerchantAdmin authority
+        let admin_role = has_role(&acc_auth, Role::MerchantAdmin, acc_admn.key);
         if admin_role.is_err() {
             msg!("Not merchant admin");
             return Err(ErrorCode::AccessDenied.into());

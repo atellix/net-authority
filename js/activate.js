@@ -5,6 +5,8 @@ const { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY } = require('@solana/web3.j
 const { TOKEN_PROGRAM_ID } = require('@solana/spl-token')
 const { promisify } = require('util')
 const exec = promisify(require('child_process').exec)
+const fs = require('fs').promises
+const base32 = require("base32.js")
 
 const anchor = require('@project-serum/anchor')
 //const provider = anchor.Provider.env()
@@ -12,8 +14,10 @@ const provider = anchor.Provider.local()
 anchor.setProvider(provider)
 const netAuthority = anchor.workspace.NetAuthority
 const netAuthorityPK = netAuthority.programId
-console.log('Net Authority Program')
-console.log(netAuthorityPK.toString())
+
+const tokenMint = new PublicKey('B63mEHwFZZrzteErNV5eM248GSqfMrg5gwFM4HsvyUoG')
+//console.log('Net Authority Program')
+//console.log(netAuthorityPK.toString())
 
 async function programAddress(inputs) {
     const addr = await PublicKey.findProgramAddress(inputs, netAuthorityPK)
@@ -21,11 +25,21 @@ async function programAddress(inputs) {
     return res
 }
 
+function exportSecretKey(keyPair) {
+    var enc = new base32.Encoder({ type: "crockford", lc: true })
+    return enc.write(keyPair.secretKey).finalize()
+}
+
 async function main() {
+    var netData = {}
+    netData['tokenMintUSDV'] = tokenMint.toString()
+    netData['netAuthorityProgram'] = netAuthorityPK.toString()
+
     var jsres = await exec('solana program show --output json ' + netAuthorityPK.toString())
     var res = JSON.parse(jsres.stdout)
     const programData = res.programdataAddress
-    
+    netData['netAuthorityProgramData'] = programData
+
     const rootData = await programAddress([netAuthorityPK.toBuffer()])
     const rootBytes = netAuthority.account.rootData.size
     const rootRent = await provider.connection.getMinimumBalanceForRentExemption(rootBytes)
@@ -37,6 +51,47 @@ async function main() {
     const authRent = await provider.connection.getMinimumBalanceForRentExemption(authBytes)
     console.log('Auth Data')
     console.log(authData.publicKey.toString(), authBytes, authRent)
+
+    const mgrAdmin = anchor.web3.Keypair.generate()
+    netData['managerAdmin1'] = mgrAdmin.publicKey.toString()
+    netData['managerAdmin1:secret'] = exportSecretKey(mgrAdmin)
+
+    const mchAdmin = anchor.web3.Keypair.generate()
+    netData['merchantAdmin1'] = mchAdmin.publicKey.toString()
+    netData['merchantAdmin1:secret'] = exportSecretKey(mchAdmin)
+
+    const fees1 = anchor.web3.Keypair.generate()
+    netData['fees1'] = fees1.publicKey.toString()
+    netData['fees1:secret'] = exportSecretKey(fees1)
+
+    const mgr1 = anchor.web3.Keypair.generate()
+    const mgrApproval1 = anchor.web3.Keypair.generate()
+    netData['manager1'] = mgr1.publicKey.toString()
+    netData['manager1:secret'] = exportSecretKey(mgr1)
+    netData['managerApproval1'] = mgrApproval1.publicKey.toString()
+    netData['managerApproval1:secret'] = exportSecretKey(mgrApproval1)
+
+    const mch1 = anchor.web3.Keypair.generate()
+    const mchApproval1 = anchor.web3.Keypair.generate()
+    netData['merchant1'] = mch1.publicKey.toString()
+    netData['merchant1:secret'] = exportSecretKey(mch1),
+    netData['merchantApproval1'] = mchApproval1.publicKey.toString()
+    netData['merchantApproval1:secret'] = exportSecretKey(mchApproval1)
+
+    /* var sk = exportSecretKey(mch1)
+    var dec = new base32.Decoder({ type: "crockford" })
+    var dk = dec.write(sk).finalize()
+    var rk = anchor.web3.Keypair.fromSecretKey(new Uint8Array(dk))
+    console.log(mch1.publicKey.toString())
+    console.log(sk)
+    console.log(rk.publicKey.toString()) */
+
+    try {
+        await fs.writeFile('net.json', JSON.stringify(netData, null, 4))
+    } catch (error) {
+        console.log("File Error: " + error)
+    }
+    process.exit(0)
 
     if (true) {
         const tx = new anchor.web3.Transaction()
@@ -72,11 +127,7 @@ async function main() {
         }
     )
 
-    console.log('Grant 1')
-    const mgrAdmin = anchor.web3.Keypair.generate()
-    const mgrApproval = anchor.web3.Keypair.generate()
-    const subscrMgr1 = anchor.web3.Keypair.generate()
-    //const merchAdmin = anchor.web3.Keypair.generate()
+    console.log('Grant 1: Manager Admin 1')
     await netAuthority.rpc.grant(
         rootData.nonce,
         1,
@@ -93,18 +144,47 @@ async function main() {
     )
     console.log('Grant 1 Done')
 
+    console.log('Grant 2: Merchant Admin 1')
+    await netAuthority.rpc.grant(
+        rootData.nonce,
+        2,
+        {
+            accounts: {
+                program: netAuthorityPK,
+                programAdmin: provider.wallet.publicKey,
+                programData: new PublicKey(programData),
+                rootData: new PublicKey(rootData.pubkey),
+                authData: authData.publicKey,
+                rbacUser: mchAdmin.publicKey,
+            },
+        }
+    )
+    console.log('Grant 2 Done')
+
     if (true) {
         const tx = new anchor.web3.Transaction()
         tx.add(
             anchor.web3.SystemProgram.createAccount({
                 fromPubkey: provider.wallet.publicKey,
-                newAccountPubkey: mgrApproval.publicKey,
+                newAccountPubkey: mgrApproval1.publicKey,
                 space: netAuthority.account.managerApproval.size,
                 lamports: await provider.connection.getMinimumBalanceForRentExemption(netAuthority.account.managerApproval.size),
                 programId: netAuthorityPK,
             })
         )
-        await provider.send(tx, [mgrApproval])
+        await provider.send(tx, [mgrApproval1])
+
+        const tx2 = new anchor.web3.Transaction()
+        tx2.add(
+            anchor.web3.SystemProgram.createAccount({
+                fromPubkey: provider.wallet.publicKey,
+                newAccountPubkey: mchApproval1.publicKey,
+                space: netAuthority.account.merchantApproval.size,
+                lamports: await provider.connection.getMinimumBalanceForRentExemption(netAuthority.account.merchantApproval.size),
+                programId: netAuthorityPK,
+            })
+        )
+        await provider.send(tx2, [mchApproval1])
     }
  
     console.log('Approve Manager 1')
@@ -115,10 +195,28 @@ async function main() {
                 rootData: new PublicKey(rootData.pubkey),
                 authData: authData.publicKey,
                 managerAdmin: mgrAdmin.publicKey,
-                managerApproval: mgrApproval.publicKey,
-                managerKey: subscrMgr1.publicKey,
+                managerApproval: mgrApproval1.publicKey,
+                managerKey: mgr1.publicKey,
             },
             signers: [mgrAdmin],
+        }
+    )
+
+    console.log('Approve Merchant 1')
+    await netAuthority.rpc.approveMerchant(
+        rootData.nonce,
+        100,
+        {
+            accounts: {
+                rootData: new PublicKey(rootData.pubkey),
+                authData: authData.publicKey,
+                merchantAdmin: mchAdmin.publicKey,
+                merchantApproval: mchApproval1.publicKey,
+                merchantKey: mch1.publicKey,
+                tokenMint: tokenMint,
+                feesAccount: fees1.publicKey,
+            },
+            signers: [mchAdmin],
         }
     )
 
