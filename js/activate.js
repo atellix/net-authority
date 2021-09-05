@@ -15,9 +15,19 @@ anchor.setProvider(provider)
 const netAuthority = anchor.workspace.NetAuthority
 const netAuthorityPK = netAuthority.programId
 
-const tokenMint = new PublicKey('B63mEHwFZZrzteErNV5eM248GSqfMrg5gwFM4HsvyUoG')
+const tokenMint = new PublicKey('CEUN1JKeDoscZirugrTAs3CuDVSkBynoz22izG9p2zTi')
 //console.log('Net Authority Program')
 //console.log(netAuthorityPK.toString())
+
+const SPL_ASSOCIATED_TOKEN = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
+async function associatedTokenAddress(walletAddress, tokenMintAddress) {
+    const addr = await PublicKey.findProgramAddress(
+        [walletAddress.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), tokenMintAddress.toBuffer()],
+        SPL_ASSOCIATED_TOKEN
+    )
+    const res = { 'pubkey': await addr[0].toString(), 'nonce': addr[1] }
+    return res
+}
 
 async function programAddress(inputs) {
     const addr = await PublicKey.findProgramAddress(inputs, netAuthorityPK)
@@ -54,29 +64,31 @@ async function main() {
 
     const mgrAdmin = anchor.web3.Keypair.generate()
     netData['managerAdmin1'] = mgrAdmin.publicKey.toString()
-    netData['managerAdmin1:secret'] = exportSecretKey(mgrAdmin)
+    netData['managerAdmin1_secret'] = exportSecretKey(mgrAdmin)
 
     const mchAdmin = anchor.web3.Keypair.generate()
     netData['merchantAdmin1'] = mchAdmin.publicKey.toString()
-    netData['merchantAdmin1:secret'] = exportSecretKey(mchAdmin)
+    netData['merchantAdmin1_secret'] = exportSecretKey(mchAdmin)
 
     const fees1 = anchor.web3.Keypair.generate()
+    const fees1token = await associatedTokenAddress(fees1.publicKey, tokenMint)
     netData['fees1'] = fees1.publicKey.toString()
-    netData['fees1:secret'] = exportSecretKey(fees1)
+    netData['fees1_secret'] = exportSecretKey(fees1)
+    netData['fees1_token'] = fees1token.pubkey
 
     const mgr1 = anchor.web3.Keypair.generate()
     const mgrApproval1 = anchor.web3.Keypair.generate()
     netData['manager1'] = mgr1.publicKey.toString()
-    netData['manager1:secret'] = exportSecretKey(mgr1)
+    netData['manager1_secret'] = exportSecretKey(mgr1)
     netData['managerApproval1'] = mgrApproval1.publicKey.toString()
-    netData['managerApproval1:secret'] = exportSecretKey(mgrApproval1)
+    netData['managerApproval1_secret'] = exportSecretKey(mgrApproval1)
 
     const mch1 = anchor.web3.Keypair.generate()
     const mchApproval1 = anchor.web3.Keypair.generate()
     netData['merchant1'] = mch1.publicKey.toString()
-    netData['merchant1:secret'] = exportSecretKey(mch1),
+    netData['merchant1_secret'] = exportSecretKey(mch1),
     netData['merchantApproval1'] = mchApproval1.publicKey.toString()
-    netData['merchantApproval1:secret'] = exportSecretKey(mchApproval1)
+    netData['merchantApproval1_secret'] = exportSecretKey(mchApproval1)
 
     /* var sk = exportSecretKey(mch1)
     var dec = new base32.Decoder({ type: "crockford" })
@@ -86,12 +98,7 @@ async function main() {
     console.log(sk)
     console.log(rk.publicKey.toString()) */
 
-    try {
-        await fs.writeFile('net.json', JSON.stringify(netData, null, 4))
-    } catch (error) {
-        console.log("File Error: " + error)
-    }
-    process.exit(0)
+    //process.exit(0)
 
     if (true) {
         const tx = new anchor.web3.Transaction()
@@ -214,7 +221,7 @@ async function main() {
                 merchantApproval: mchApproval1.publicKey,
                 merchantKey: mch1.publicKey,
                 tokenMint: tokenMint,
-                feesAccount: fees1.publicKey,
+                feesAccount: new PublicKey(fees1token.pubkey),
             },
             signers: [mchAdmin],
         }
@@ -236,7 +243,11 @@ async function main() {
         }
     ) */
 
-    // TODO: Test NetworkAdmin
+    try {
+        await fs.writeFile('net.json', JSON.stringify(netData, null, 4))
+    } catch (error) {
+        console.log("File Error: " + error)
+    }
 }
 
 console.log('Begin')
