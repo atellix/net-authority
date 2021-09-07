@@ -15,12 +15,12 @@ cpi = ["no-entrypoint"]
 default = []
 
 [dependencies]
-anchor-lang = "0.13.0"
+anchor-lang = "0.14.0"
 bytemuck = "1.7.2"
 uuid = "0.8.2"
 num_enum = "0.5.4"
 byte-slice-cast = "1.0.0"
-solana-program = "1.7.8"
+solana-program = "1.7.11"
 slab_alloc = { version = "1.0.0", path = "/Users/mfrager/Build/solana/crates/slab-alloc" }
 decode_account = { version = "1.0.0", path = "/Users/mfrager/Build/solana/crates/decode-account" }
 

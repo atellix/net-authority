@@ -7,7 +7,7 @@ use anchor_lang::prelude::*;
 use solana_program::{
     program::{ invoke_signed },
     account_info::AccountInfo,
-    system_instruction,
+    system_instruction
 };
 
 extern crate slab_alloc;
@@ -38,6 +38,7 @@ pub enum Role {             // Role-based access control:
     NetworkAdmin,           // Can create/modify other admins (program owner is always a NetworkAdmin)
     ManagerAdmin,           // Can create/modify manager approvals (processes subscriptions)
     MerchantAdmin,          // Can create/modify merchant approvals (receives subscription payments)
+    RevenueAdmin,           // Can register merchant revenue (trusted contract internal PDAs)
 }
 
 #[derive(Copy, Clone)]
@@ -449,6 +450,43 @@ mod net_authority {
         Ok(())
     }
 
+/*    pub fn record_revenue(ctx: Context<RecordRevenue>,
+        inp_root_nonce: u8,
+        inp_incoming: bool,
+        inp_amount: u64,
+    ) -> ProgramResult {
+        let acc_admn = &ctx.accounts.merchant_admin.to_account_info(); // Merchant admin
+        let acc_root = &ctx.accounts.root_data.to_account_info();
+        let acc_auth = &ctx.accounts.auth_data.to_account_info();
+
+        // Verify program data
+        let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
+            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
+        verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
+        verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
+
+        // Check for RevenueAdmin authority
+        let admin_role = has_role(&acc_auth, Role::RevenueAdmin, acc_admn.key);
+        if admin_role.is_err() {
+            msg!("Not revenue admin");
+            return Err(ErrorCode::AccessDenied.into());
+        }
+
+        // Update approval account
+        let acc_aprv = &mut ctx.accounts.merchant_approval;
+        if !acc_aprv.active {
+            msg!("Inactive merchant");
+            return Err(ErrorCode::AccessDenied.into());
+        }
+        if inp_incoming {
+            acc_aprv.revenue = acc_aprv.revenue.checked_add(inp_amount as u64).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        } else {
+            acc_aprv.revenue = acc_aprv.revenue.checked_sub(inp_amount as u64).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        }
+
+        Ok(())
+    } */
+
     pub fn approve_manager(ctx: Context<ApproveManager>,
         inp_root_nonce: u8,
     ) -> ProgramResult {
@@ -509,7 +547,7 @@ mod net_authority {
 #[derive(Accounts)]
 pub struct Initialize<'info> {
     pub root_data: AccountInfo<'info>,
-    #[account(init)]
+    #[account(mut)]
     pub auth_data: AccountInfo<'info>,
     pub program: AccountInfo<'info>,
     pub program_data: AccountInfo<'info>,
@@ -535,7 +573,7 @@ pub struct ApproveMerchant<'info> {
     pub auth_data: AccountInfo<'info>,
     #[account(signer)]
     pub merchant_admin: AccountInfo<'info>,
-    #[account(init)]
+    #[account(mut)]
     pub merchant_approval: ProgramAccount<'info, MerchantApproval>,
     pub merchant_key: AccountInfo<'info>,
     pub token_mint: AccountInfo<'info>,
@@ -559,7 +597,7 @@ pub struct ApproveManager<'info> {
     pub auth_data: AccountInfo<'info>,
     #[account(signer)]
     pub manager_admin: AccountInfo<'info>,
-    #[account(init)]
+    #[account(mut)]
     pub manager_approval: ProgramAccount<'info, ManagerApproval>,
     pub manager_key: AccountInfo<'info>,
 }
@@ -589,6 +627,14 @@ impl RootData {
     }
 }
 
+impl Default for RootData {
+    fn default() -> Self {
+        Self {
+            root_authority: Pubkey::default(),
+        }
+    }
+}
+
 #[account]
 pub struct MerchantApproval {
     pub active: bool,
@@ -596,12 +642,35 @@ pub struct MerchantApproval {
     pub token_mint: Pubkey,
     pub fees_account: Pubkey,
     pub fees_bps: u32,
+    pub revenue: u64,
+}
+
+impl Default for MerchantApproval {
+    fn default() -> Self {
+        Self {
+            active: false,
+            merchant_key: Pubkey::default(),
+            token_mint: Pubkey::default(),
+            fees_account: Pubkey::default(),
+            fees_bps: 0,
+            revenue: 0,
+        }
+    }
 }
 
 #[account]
 pub struct ManagerApproval {
     pub active: bool,
     pub manager_key: Pubkey,
+}
+
+impl Default for ManagerApproval {
+    fn default() -> Self {
+        Self {
+            active: false,
+            manager_key: Pubkey::default(),
+        }
+    }
 }
 
 #[error]
