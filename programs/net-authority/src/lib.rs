@@ -1,5 +1,5 @@
 //use uuid::Uuid;
-use std::{ mem::size_of, io::Cursor };
+use std::{ io::Cursor };
 use bytemuck::{ Pod, Zeroable };
 use byte_slice_cast::*;
 use num_enum::TryFromPrimitive;
@@ -39,6 +39,8 @@ pub enum Role {             // Role-based access control:
     ManagerAdmin,           // Can create/modify manager approvals (processes subscriptions)
     MerchantAdmin,          // Can create/modify merchant approvals (receives subscription payments)
     RevenueAdmin,           // Can register merchant revenue (trusted contract internal PDAs)
+    SwapDeposit,            // Can deposit to swap contracts
+    SwapWithdraw,           // Can withdraw from swap contracts
 }
 
 #[derive(Copy, Clone)]
@@ -183,6 +185,10 @@ fn has_role(acc_auth: &AccountInfo, role: Role, key: &Pubkey) -> ProgramResult {
         return Err(ErrorCode::AccessDenied.into());
     }
     let urec = rd.index::<UserRBAC>(DT::UserRBAC as u16, authrec.unwrap() as usize);
+    if urec.user_key != *key {
+        msg!("User key does not match signer");
+        return Err(ErrorCode::AccessDenied.into());
+    }
     if ! urec.active() {
         //msg!("Role revoked");
         return Err(ErrorCode::AccessDenied.into());
@@ -410,11 +416,18 @@ mod net_authority {
 
         // Create approval account
         let acc_aprv = &mut ctx.accounts.merchant_approval;
-        acc_aprv.active = true;
-        acc_aprv.merchant_key = *ctx.accounts.merchant_key.to_account_info().key;
-        acc_aprv.token_mint = *ctx.accounts.token_mint.to_account_info().key;
-        acc_aprv.fees_account = *ctx.accounts.fees_account.to_account_info().key;
-        acc_aprv.fees_bps = inp_fees_bps;
+        let ra = MerchantApproval {
+            active: true,
+            merchant_key: *ctx.accounts.merchant_key.to_account_info().key,
+            token_mint: *ctx.accounts.token_mint.to_account_info().key,
+            fees_account: *ctx.accounts.fees_account.to_account_info().key,
+            fees_bps: inp_fees_bps,
+            revenue: 0,
+        };
+        let mut aprv_data = acc_aprv.try_borrow_mut_data()?;
+        let aprv_dst: &mut [u8] = &mut aprv_data;
+        let mut aprv_crs = Cursor::new(aprv_dst);
+        ra.try_serialize(&mut aprv_crs)?;
 
         Ok(())
     }
@@ -509,8 +522,14 @@ mod net_authority {
 
         // Create approval account
         let acc_aprv = &mut ctx.accounts.manager_approval;
-        acc_aprv.active = true;
-        acc_aprv.manager_key = *ctx.accounts.manager_key.to_account_info().key;
+        let ra = ManagerApproval {
+            active: true,
+            manager_key: *ctx.accounts.manager_key.to_account_info().key,
+        };
+        let mut aprv_data = acc_aprv.try_borrow_mut_data()?;
+        let aprv_dst: &mut [u8] = &mut aprv_data;
+        let mut aprv_crs = Cursor::new(aprv_dst);
+        ra.try_serialize(&mut aprv_crs)?;
 
         Ok(())
     }
@@ -574,7 +593,7 @@ pub struct ApproveMerchant<'info> {
     #[account(signer)]
     pub merchant_admin: AccountInfo<'info>,
     #[account(mut)]
-    pub merchant_approval: ProgramAccount<'info, MerchantApproval>,
+    pub merchant_approval: AccountInfo<'info>,
     pub merchant_key: AccountInfo<'info>,
     pub token_mint: AccountInfo<'info>,
     pub fees_account: AccountInfo<'info>,
@@ -598,7 +617,7 @@ pub struct ApproveManager<'info> {
     #[account(signer)]
     pub manager_admin: AccountInfo<'info>,
     #[account(mut)]
-    pub manager_approval: ProgramAccount<'info, ManagerApproval>,
+    pub manager_approval: AccountInfo<'info>,
     pub manager_key: AccountInfo<'info>,
 }
 

@@ -9,13 +9,13 @@ const fs = require('fs').promises
 const base32 = require("base32.js")
 
 const anchor = require('@project-serum/anchor')
-//const provider = anchor.Provider.env()
-const provider = anchor.Provider.local()
+const provider = anchor.Provider.env()
+//const provider = anchor.Provider.local()
 anchor.setProvider(provider)
 const netAuthority = anchor.workspace.NetAuthority
 const netAuthorityPK = netAuthority.programId
 
-const tokenMint = new PublicKey('CEUN1JKeDoscZirugrTAs3CuDVSkBynoz22izG9p2zTi')
+const tokenMint = new PublicKey('9YJSAZehJRU3vLMfor7mXF9B4KCQZ6LAzP1tV7ek8kb9')
 //console.log('Net Authority Program')
 //console.log(netAuthorityPK.toString())
 
@@ -61,6 +61,7 @@ async function main() {
     const authRent = await provider.connection.getMinimumBalanceForRentExemption(authBytes)
     console.log('Auth Data')
     console.log(authData.publicKey.toString(), authBytes, authRent)
+    netData['netAuthorityRBAC'] = authData.publicKey.toString()
 
     const mgrAdmin = anchor.web3.Keypair.generate()
     netData['managerAdmin1'] = mgrAdmin.publicKey.toString()
@@ -167,6 +168,40 @@ async function main() {
         }
     )
     console.log('Grant 2 Done')
+
+    /* console.log('Grant 3: Swap Deposit 1')
+    await netAuthority.rpc.grant(
+        rootData.nonce,
+        4,
+        {
+            accounts: {
+                program: netAuthorityPK,
+                programAdmin: provider.wallet.publicKey,
+                programData: new PublicKey(programData),
+                rootData: new PublicKey(rootData.pubkey),
+                authData: authData.publicKey,
+                rbacUser: swapDeposit1.publicKey,
+            },
+        }
+    )
+    console.log('Grant 3 Done')
+
+    console.log('Grant 4: Swap Withdraw 1')
+    await netAuthority.rpc.grant(
+        rootData.nonce,
+        5,
+        {
+            accounts: {
+                program: netAuthorityPK,
+                programAdmin: provider.wallet.publicKey,
+                programData: new PublicKey(programData),
+                rootData: new PublicKey(rootData.pubkey),
+                authData: authData.publicKey,
+                rbacUser: swapWithdraw1.publicKey,
+            },
+        }
+    )
+    console.log('Grant 4 Done') */
 
     if (true) {
         const tx = new anchor.web3.Transaction()
