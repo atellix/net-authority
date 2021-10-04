@@ -15,7 +15,7 @@ anchor.setProvider(provider)
 const netAuthority = anchor.workspace.NetAuthority
 const netAuthorityPK = netAuthority.programId
 
-const tokenMint = new PublicKey('9YJSAZehJRU3vLMfor7mXF9B4KCQZ6LAzP1tV7ek8kb9')
+const tokenMint = new PublicKey('3gNsEnXEG9j4yEcSX36NWodP3gnK2gDv8g3oFkPobbmr')
 //console.log('Net Authority Program')
 //console.log(netAuthorityPK.toString())
 
@@ -71,6 +71,7 @@ async function main() {
     netData['merchantAdmin1'] = mchAdmin.publicKey.toString()
     netData['merchantAdmin1_secret'] = exportSecretKey(mchAdmin)
 
+    // TODO: Fund associated token account for all relevant mints
     const fees1 = anchor.web3.Keypair.generate()
     const fees1token = await associatedTokenAddress(fees1.publicKey, tokenMint)
     netData['fees1'] = fees1.publicKey.toString()
@@ -243,6 +244,8 @@ async function main() {
             signers: [mgrAdmin],
         }
     )
+
+    // TODO: Fund associated token account for all relevant mints
 
     console.log('Approve Merchant 1')
     await netAuthority.rpc.approveMerchant(

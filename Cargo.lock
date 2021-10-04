@@ -391,7 +391,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "decode_account"
+name = "decode-account"
 version = "1.7.8"
 dependencies = [
  "base64 0.12.3",
@@ -667,9 +667,9 @@ dependencies = [
  "anchor-lang",
  "byte-slice-cast",
  "bytemuck",
- "decode_account",
+ "decode-account",
  "num_enum",
- "slab_alloc",
+ "slab-alloc",
  "solana-program",
  "uuid",
 ]
@@ -938,7 +938,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "slab_alloc"
+name = "slab-alloc"
 version = "1.0.0"
 dependencies = [
  "arrayref",
