@@ -15,7 +15,7 @@ cpi = ["no-entrypoint"]
 default = []
 
 [dependencies]
-anchor-lang = "0.14.0"
+anchor-lang = "0.17.0"
 bytemuck = "1.7.2"
 uuid = "0.8.2"
 num_enum = "0.5.4"

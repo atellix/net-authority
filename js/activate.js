@@ -15,7 +15,7 @@ anchor.setProvider(provider)
 const netAuthority = anchor.workspace.NetAuthority
 const netAuthorityPK = netAuthority.programId
 
-const tokenMint = new PublicKey('3gNsEnXEG9j4yEcSX36NWodP3gnK2gDv8g3oFkPobbmr')
+const tokenMint = new PublicKey('HZE3aet4kKEnBdKsTAWcc9Axv6F7p9Yu4rcNJcuxddZr')
 //console.log('Net Authority Program')
 //console.log(netAuthorityPK.toString())
 
@@ -57,7 +57,7 @@ async function main() {
     console.log((new PublicKey(rootData.pubkey)).toString(), rootBytes, rootRent)
 
     const authData = anchor.web3.Keypair.generate()
-    const authBytes = 130 + (16384 * 6)
+    const authBytes = 130 + (16384 * 2)
     const authRent = await provider.connection.getMinimumBalanceForRentExemption(authBytes)
     console.log('Auth Data')
     console.log(authData.publicKey.toString(), authBytes, authRent)

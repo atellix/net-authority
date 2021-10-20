@@ -1,5 +1,5 @@
 //use uuid::Uuid;
-use std::{ io::Cursor };
+use std::{ io::Cursor, result::Result as FnResult };
 use bytemuck::{ Pod, Zeroable };
 use byte_slice_cast::*;
 use num_enum::TryFromPrimitive;
@@ -11,12 +11,14 @@ use solana_program::{
 };
 
 extern crate slab_alloc;
-use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, SlabVec };
+use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, SlabVec, SlabTreeError };
 
 extern crate decode_account;
 use decode_account::parse_bpf_loader::{ parse_bpf_upgradeable_loader, BpfUpgradeableLoaderAccountType };
 
-pub const MAX_RBAC: u32 = 1024;
+declare_id!("7AvBUBV8X5w8dvSnMm9QuMS51mNh7dK9zDZ2W1iR2rBg");
+
+pub const MAX_RBAC: u32 = 128;
 
 #[repr(u16)]
 #[derive(PartialEq, Debug, Eq, Copy, Clone)]
@@ -46,28 +48,44 @@ pub enum Role {             // Role-based access control:
 #[derive(Copy, Clone)]
 #[repr(packed)]
 pub struct UserRBAC {
-    pub active: bool,
-    pub user_key: Pubkey,
     pub role: Role,
+    pub free: u32,
 }
 unsafe impl Zeroable for UserRBAC {}
 unsafe impl Pod for UserRBAC {}
 
 impl UserRBAC {
-    pub fn active(&self) -> bool {
-        self.active
-    }
-
-    pub fn set_active(&mut self, new_status: bool) {
-        self.active = new_status
-    }
-
-    pub fn user_key(&self) -> Pubkey {
-        self.user_key
-    }
-
     pub fn role(&self) -> Role {
         self.role
+    }
+
+    pub fn free(&self) -> u32 {
+        self.free
+    }
+
+    pub fn set_free(&mut self, new_free: u32) {
+        self.free = new_free
+    }
+
+    fn next_index(pt: &mut SlabPageAlloc, data_type: DT) -> FnResult<u32, ProgramError> {
+        let svec = pt.header_mut::<SlabVec>(index_datatype(data_type));
+        let free_top = svec.free_top();
+        if free_top == 0 { // Empty free list
+            return Ok(svec.next_index());
+        }
+        let free_index = free_top.checked_sub(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        let index_act = pt.index::<UserRBAC>(index_datatype(data_type), free_index as usize);
+        let index_ptr = index_act.free();
+        pt.header_mut::<SlabVec>(index_datatype(data_type)).set_free_top(index_ptr);
+        Ok(free_index)
+    }
+
+    fn free_index(pt: &mut SlabPageAlloc, data_type: DT, idx: u32) -> ProgramResult {
+        let free_top = pt.header::<SlabVec>(index_datatype(data_type)).free_top();
+        pt.index_mut::<UserRBAC>(index_datatype(data_type), idx as usize).set_free(free_top);
+        let new_top = idx.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
+        pt.header_mut::<SlabVec>(index_datatype(data_type)).set_free_top(new_top);
+        Ok(())
     }
 }
 
@@ -153,26 +171,33 @@ fn map_datatype(data_type: DT) -> u16 {  // Maps only
 }
 
 #[inline]
-fn map_get(pt: &mut SlabPageAlloc, data_type: DT, key: u128) -> Option<u32> {
+fn map_get(pt: &mut SlabPageAlloc, data_type: DT, key: u128) -> Option<LeafNode> {
     let cm = CritMap { slab: pt, type_id: map_datatype(data_type), capacity: map_len(data_type) };
     let rf = cm.get_key(key);
     match rf {
         None => None,
-        Some(res) => Some(res.data()),
+        Some(res) => Some(res.clone()),
     }
 }
 
 #[inline]
-fn map_set(pt: &mut SlabPageAlloc, data_type: DT, key: u128, data: u32) {
+fn map_insert(pt: &mut SlabPageAlloc, data_type: DT, node: &LeafNode) -> FnResult<(), SlabTreeError> {
     let mut cm = CritMap { slab: pt, type_id: map_datatype(data_type), capacity: map_len(data_type) };
-    let node = LeafNode::new(key, data);
-    cm.insert_leaf(&node).expect("Failed to insert leaf");
+    let res = cm.insert_leaf(node);
+    match res {
+        Err(SlabTreeError::OutOfSpace) => {
+            //msg!("Atellix: Out of space...");
+            return Err(SlabTreeError::OutOfSpace)
+        },
+        _  => Ok(())
+    }
 }
 
 #[inline]
-fn next_index(pt: &mut SlabPageAlloc, data_type: DT) -> u32 {
-    let svec = pt.header_mut::<SlabVec>(index_datatype(data_type));
-    svec.next_index()
+fn map_remove(pt: &mut SlabPageAlloc, data_type: DT, key: u128) -> FnResult<(), SlabTreeError> {
+    let mut cm = CritMap { slab: pt, type_id: map_datatype(data_type), capacity: map_len(data_type) };
+    cm.remove_by_key(key).ok_or(SlabTreeError::NotFound)?;
+    Ok(())
 }
 
 fn has_role(acc_auth: &AccountInfo, role: Role, key: &Pubkey) -> ProgramResult {
@@ -181,16 +206,15 @@ fn has_role(acc_auth: &AccountInfo, role: Role, key: &Pubkey) -> ProgramResult {
     let authhash: u128 = CritMap::bytes_hash([[role as u32].as_byte_slice(), key.as_ref()].concat().as_slice());
     let authrec = map_get(rd, DT::UserRBAC, authhash);
     if ! authrec.is_some() {
-        //msg!("Role not found");
         return Err(ErrorCode::AccessDenied.into());
     }
-    let urec = rd.index::<UserRBAC>(DT::UserRBAC as u16, authrec.unwrap() as usize);
-    if urec.user_key != *key {
+    if authrec.unwrap().owner() != *key {
         msg!("User key does not match signer");
         return Err(ErrorCode::AccessDenied.into());
     }
-    if ! urec.active() {
-        //msg!("Role revoked");
+    let urec = rd.index::<UserRBAC>(DT::UserRBAC as u16, authrec.unwrap().slot() as usize);
+    if urec.role() != role {
+        msg!("Role does not match");
         return Err(ErrorCode::AccessDenied.into());
     }
     Ok(())
@@ -310,26 +334,19 @@ mod net_authority {
         // Check if record exists
         let authrec = map_get(rd, DT::UserRBAC, authhash);
         if authrec.is_some() {
-            // Check if record is active
-            let rec_idx = authrec.unwrap() as usize;
-            let urec = rd.index_mut::<UserRBAC>(DT::UserRBAC as u16, rec_idx);
-            if urec.active() {
-                msg!("Role already active");
-            } else {
-                urec.set_active(true);
-                msg!("Role resumed");
-            }
+            msg!("Atellix: Role already active");
         } else {
             // Add new record
-            let rbac_idx = next_index(rd, DT::UserRBAC);
-            let ur = UserRBAC {
-                active: true,
-                user_key: *acc_rbac.key,
-                role: role,
-            };
-            *rd.index_mut(DT::UserRBAC as u16, rbac_idx as usize) = ur;
-            map_set(rd, DT::UserRBAC, authhash, rbac_idx);
-            msg!("Role granted");
+            let new_item = map_insert(rd, DT::UserRBAC, &LeafNode::new(authhash, 0, acc_rbac.key));
+            if new_item.is_err() {
+                msg!("Unable to insert role");
+                return Err(ErrorCode::InternalError.into());
+            }
+            let rbac_idx = UserRBAC::next_index(rd, DT::UserRBAC)?;
+            let mut cm = CritMap { slab: rd, type_id: map_datatype(DT::UserRBAC), capacity: map_len(DT::UserRBAC) };
+            cm.get_key_mut(authhash).unwrap().set_slot(rbac_idx);
+            *rd.index_mut(DT::UserRBAC as u16, rbac_idx as usize) = UserRBAC { role: role, free: 0 };
+            msg!("Atellix: Role granted");
         }
         Ok(())
     }
@@ -378,17 +395,11 @@ mod net_authority {
         // Check if record exists
         let authrec = map_get(rd, DT::UserRBAC, authhash);
         if authrec.is_some() {
-            // Check if record is active
-            let rec_idx = authrec.unwrap() as usize;
-            let urec = rd.index_mut::<UserRBAC>(DT::UserRBAC as u16, rec_idx);
-            if urec.active() {
-                urec.set_active(false);
-                msg!("Role revoked");
-            } else {
-                msg!("Role already revoked");
-            }
+            map_remove(rd, DT::UserRBAC, authhash).or(Err(ProgramError::from(ErrorCode::InternalError)))?;
+            UserRBAC::free_index(rd, DT::UserRBAC, authrec.unwrap().slot())?;
+            msg!("Atellix: Role revoked");
         } else {
-            msg!("Role not found");
+            msg!("Atellix: Role not found");
         }
         Ok(())
     }
@@ -463,18 +474,16 @@ mod net_authority {
         Ok(())
     }
 
-/*    pub fn record_revenue(ctx: Context<RecordRevenue>,
-        inp_root_nonce: u8,
+    pub fn record_revenue(ctx: Context<RecordRevenue>,
         inp_incoming: bool,
         inp_amount: u64,
     ) -> ProgramResult {
-        let acc_admn = &ctx.accounts.merchant_admin.to_account_info(); // Merchant admin
+        let acc_admn = &ctx.accounts.revenue_admin.to_account_info(); // Revenue admin
         let acc_root = &ctx.accounts.root_data.to_account_info();
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
 
         // Verify program data
-        let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
-            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
+        let (acc_root_expected, _root_nonce) = Pubkey::find_program_address(&[ctx.program_id.as_ref()], ctx.program_id);
         verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
         verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
 
@@ -498,7 +507,7 @@ mod net_authority {
         }
 
         Ok(())
-    } */
+    }
 
     pub fn approve_manager(ctx: Context<ApproveManager>,
         inp_root_nonce: u8,
@@ -611,6 +620,16 @@ pub struct UpdateMerchant<'info> {
 }
 
 #[derive(Accounts)]
+pub struct RecordRevenue<'info> {
+    pub root_data: ProgramAccount<'info, RootData>,
+    pub auth_data: AccountInfo<'info>,
+    #[account(signer)]
+    pub revenue_admin: AccountInfo<'info>,
+    #[account(mut)]
+    pub merchant_approval: ProgramAccount<'info, MerchantApproval>,
+}
+
+#[derive(Accounts)]
 pub struct ApproveManager<'info> {
     pub root_data: ProgramAccount<'info, RootData>,
     pub auth_data: AccountInfo<'info>,
@@ -702,7 +721,8 @@ pub enum ErrorCode {
     InvalidAccount,
     #[msg("Invalid derived account")]
     InvalidDerivedAccount,
+    #[msg("Internal error")]
+    InternalError,
     #[msg("Overflow")]
     Overflow,
-
 }
