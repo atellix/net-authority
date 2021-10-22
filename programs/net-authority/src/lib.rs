@@ -496,6 +496,8 @@ mod net_authority {
             return Err(ErrorCode::AccessDenied.into());
         }
 
+        msg!("Atellix: Update merchant revenue: {}", inp_amount.to_string());
+
         // Update approval account
         let acc_aprv = &mut ctx.accounts.merchant_approval;
         if !acc_aprv.active {
