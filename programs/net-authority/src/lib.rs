@@ -41,8 +41,6 @@ pub enum Role {             // Role-based access control:
     ManagerAdmin,           // Can create/modify manager approvals (processes subscriptions)
     MerchantAdmin,          // Can create/modify merchant approvals (receives subscription payments)
     RevenueAdmin,           // Can register merchant revenue (trusted contract internal PDAs)
-    SwapDeposit,            // Can deposit to swap contracts
-    SwapWithdraw,           // Can withdraw from swap contracts
 }
 
 #[derive(Copy, Clone)]

@@ -5,3 +5,4 @@ target
 *.swo
 *.swp
 js/net.json
+js/net.json.*
