@@ -7,42 +7,21 @@ const { promisify } = require('util')
 const exec = promisify(require('child_process').exec)
 const fs = require('fs').promises
 const base32 = require("base32.js")
-
 const anchor = require('@project-serum/anchor')
+const { associatedTokenAddress, programAddress, exportSecretKey, jsonFileRead, jsonFileWrite } = require('../../js/atellix-common')
+
 const provider = anchor.Provider.env()
 //const provider = anchor.Provider.local()
 anchor.setProvider(provider)
 const netAuthority = anchor.workspace.NetAuthority
 const netAuthorityPK = netAuthority.programId
-
-const tokenMint = new PublicKey('HZE3aet4kKEnBdKsTAWcc9Axv6F7p9Yu4rcNJcuxddZr')
 //console.log('Net Authority Program')
 //console.log(netAuthorityPK.toString())
 
-const SPL_ASSOCIATED_TOKEN = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
-async function associatedTokenAddress(walletAddress, tokenMintAddress) {
-    const addr = await PublicKey.findProgramAddress(
-        [walletAddress.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), tokenMintAddress.toBuffer()],
-        SPL_ASSOCIATED_TOKEN
-    )
-    const res = { 'pubkey': await addr[0].toString(), 'nonce': addr[1] }
-    return res
-}
-
-async function programAddress(inputs) {
-    const addr = await PublicKey.findProgramAddress(inputs, netAuthorityPK)
-    const res = { 'pubkey': await addr[0].toString(), 'nonce': addr[1] }
-    return res
-}
-
-function exportSecretKey(keyPair) {
-    var enc = new base32.Encoder({ type: "crockford", lc: true })
-    return enc.write(keyPair.secretKey).finalize()
-}
-
 async function main() {
-    var netData = {}
-    netData['tokenMintUSDV'] = tokenMint.toString()
+    const netData = await jsonFileRead('../../data/net.json')
+
+    const tokenMint = new PublicKey(netData['tokenMintUSDV'])
     netData['netAuthorityProgram'] = netAuthorityPK.toString()
 
     var jsres = await exec('solana program show --output json ' + netAuthorityPK.toString())
@@ -50,7 +29,7 @@ async function main() {
     const programData = res.programdataAddress
     netData['netAuthorityProgramData'] = programData
 
-    const rootData = await programAddress([netAuthorityPK.toBuffer()])
+    const rootData = await programAddress([netAuthorityPK.toBuffer()], netAuthorityPK)
     const rootBytes = netAuthority.account.rootData.size
     const rootRent = await provider.connection.getMinimumBalanceForRentExemption(rootBytes)
     console.log('Root Data')
@@ -91,16 +70,6 @@ async function main() {
     netData['merchant1_secret'] = exportSecretKey(mch1),
     netData['merchantApproval1'] = mchApproval1.publicKey.toString()
     netData['merchantApproval1_secret'] = exportSecretKey(mchApproval1)
-
-    /* var sk = exportSecretKey(mch1)
-    var dec = new base32.Decoder({ type: "crockford" })
-    var dk = dec.write(sk).finalize()
-    var rk = anchor.web3.Keypair.fromSecretKey(new Uint8Array(dk))
-    console.log(mch1.publicKey.toString())
-    console.log(sk)
-    console.log(rk.publicKey.toString()) */
-
-    //process.exit(0)
 
     if (true) {
         const tx = new anchor.web3.Transaction()
@@ -169,40 +138,6 @@ async function main() {
         }
     )
     console.log('Grant 2 Done')
-
-    /* console.log('Grant 3: Swap Deposit 1')
-    await netAuthority.rpc.grant(
-        rootData.nonce,
-        4,
-        {
-            accounts: {
-                program: netAuthorityPK,
-                programAdmin: provider.wallet.publicKey,
-                programData: new PublicKey(programData),
-                rootData: new PublicKey(rootData.pubkey),
-                authData: authData.publicKey,
-                rbacUser: swapDeposit1.publicKey,
-            },
-        }
-    )
-    console.log('Grant 3 Done')
-
-    console.log('Grant 4: Swap Withdraw 1')
-    await netAuthority.rpc.grant(
-        rootData.nonce,
-        5,
-        {
-            accounts: {
-                program: netAuthorityPK,
-                programAdmin: provider.wallet.publicKey,
-                programData: new PublicKey(programData),
-                rootData: new PublicKey(rootData.pubkey),
-                authData: authData.publicKey,
-                rbacUser: swapWithdraw1.publicKey,
-            },
-        }
-    )
-    console.log('Grant 4 Done') */
 
     if (true) {
         const tx = new anchor.web3.Transaction()
@@ -281,11 +216,7 @@ async function main() {
         }
     ) */
 
-    try {
-        await fs.writeFile('net.json', JSON.stringify(netData, null, 4))
-    } catch (error) {
-        console.log("File Error: " + error)
-    }
+    await jsonFileWrite('../../data/net.json', netData)
 }
 
 console.log('Begin')

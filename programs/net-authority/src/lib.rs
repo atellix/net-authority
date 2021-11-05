@@ -16,7 +16,7 @@ use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, Slab
 extern crate decode_account;
 use decode_account::parse_bpf_loader::{ parse_bpf_upgradeable_loader, BpfUpgradeableLoaderAccountType };
 
-declare_id!("7AvBUBV8X5w8dvSnMm9QuMS51mNh7dK9zDZ2W1iR2rBg");
+declare_id!("2DCc4VCBpY2bbWywrFRNVx1Hb1Arupgbe4BLLH7LaYaG");
 
 pub const MAX_RBAC: u32 = 128;
 
