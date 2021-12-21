@@ -3,6 +3,7 @@ use std::{ io::Cursor, result::Result as FnResult };
 use bytemuck::{ Pod, Zeroable };
 use byte_slice_cast::*;
 use num_enum::TryFromPrimitive;
+use arrayref::array_ref;
 use anchor_lang::prelude::*;
 use solana_program::{
     program::{ invoke_signed },
@@ -16,7 +17,7 @@ use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, Slab
 extern crate decode_account;
 use decode_account::parse_bpf_loader::{ parse_bpf_upgradeable_loader, BpfUpgradeableLoaderAccountType };
 
-declare_id!("CLsS3adbbwa7HT6FvZVQhexktmRbWUJQ97aAUFFiNbLg");
+declare_id!("Ckh1UPozjq5yPsf5iA3pCCPh8qqnCbnjpfhSBHGXTUdM");
 
 pub const MAX_RBAC: u32 = 128;
 
@@ -434,6 +435,11 @@ mod net_authority {
             revenue: 0,
         };
         let mut aprv_data = acc_aprv.try_borrow_mut_data()?;
+        let disc_bytes = array_ref![aprv_data, 0, 8];
+        if disc_bytes != &[0; 8] {
+            msg!("Account already initialized");
+            return Err(ErrorCode::InvalidAccount.into());
+        }
         let aprv_dst: &mut [u8] = &mut aprv_data;
         let mut aprv_crs = Cursor::new(aprv_dst);
         ra.try_serialize(&mut aprv_crs)?;
@@ -538,6 +544,11 @@ mod net_authority {
             manager_key: *ctx.accounts.manager_key.to_account_info().key,
         };
         let mut aprv_data = acc_aprv.try_borrow_mut_data()?;
+        let disc_bytes = array_ref![aprv_data, 0, 8];
+        if disc_bytes != &[0; 8] {
+            msg!("Account already initialized");
+            return Err(ErrorCode::InvalidAccount.into());
+        }
         let aprv_dst: &mut [u8] = &mut aprv_data;
         let mut aprv_crs = Cursor::new(aprv_dst);
         ra.try_serialize(&mut aprv_crs)?;
