@@ -17,7 +17,11 @@ use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, Slab
 extern crate decode_account;
 use decode_account::parse_bpf_loader::{ parse_bpf_upgradeable_loader, BpfUpgradeableLoaderAccountType };
 
-declare_id!("4FZP3dRoPHpEwsA3N4rUhXJK9X4bQySny4mfoXuaYcHV");
+declare_id!("EENsfQstQpQMSTYqmiSssMEGB24pAgTvo9PxQ1SuxN8A");
+
+pub const VERSION_MAJOR: u32 = 1;
+pub const VERSION_MINOR: u32 = 0;
+pub const VERSION_PATCH: u32 = 0;
 
 pub const MAX_RBAC: u32 = 128;
 
@@ -288,9 +292,15 @@ mod net_authority {
         Ok(())
     }
 
-    pub fn update_metadata(ctx: Context<UpdateMetadata>,
+    pub fn store_metadata(ctx: Context<UpdateMetadata>,
+        inp_create: bool,
         inp_info_size: u64,
-        inp_info_rent: u64
+        inp_info_rent: u64,
+        inp_program_name: String,
+        inp_developer_name: String,
+        inp_developer_url: String,
+        inp_source_url: String,
+        inp_verify_url: String,
     ) -> ProgramResult {
         {
             let acc_prog = &ctx.accounts.program.to_account_info();
@@ -298,12 +308,66 @@ mod net_authority {
             let acc_user = &ctx.accounts.program_admin.to_account_info();
             verify_program_owner(ctx.program_id, &acc_prog, &acc_pdat, &acc_user)?;
         }
-        let acc_info = &ctx.accounts.info_data.to_account_info();
-
-        let mut info_data = acc_root.try_borrow_mut_data()?;
+        if inp_create {
+            let av = ctx.remaining_accounts;
+            let funder_info = av.get(0).unwrap();
+            let data_account_info = av.get(1).unwrap();
+            let system_program_info = av.get(2).unwrap();
+            let (info_address, bump_seed) = Pubkey::find_program_address(
+                &[ctx.program_id.as_ref(), String::from("metadata").as_ref()],
+                ctx.program_id,
+            );
+            verify_matching_accounts(&info_address, &data_account_info.key,
+                Some(String::from("Invalid program_info account"))
+            )?;
+            verify_matching_accounts(&info_address, &ctx.accounts.program_info.to_account_info().key,
+                Some(String::from("Invalid program_info account parameter"))
+            )?;
+            let mdstr = String::from("metadata");
+            let account_signer_seeds: &[&[_]] = &[
+                ctx.program_id.as_ref(),
+                mdstr.as_ref(),
+                &[bump_seed],
+            ];
+            invoke_signed(
+                &system_instruction::create_account(
+                    funder_info.key,
+                    data_account_info.key,
+                    inp_info_rent,
+                    inp_info_size,
+                    ctx.program_id
+                ),
+                &[
+                    funder_info.clone(),
+                    data_account_info.clone(),
+                    system_program_info.clone(),
+                ],
+                &[account_signer_seeds],
+            )?;
+        }
+        let md = ProgramMetadata {
+            semvar_major: VERSION_MAJOR,
+            semvar_minor: VERSION_MINOR,
+            semvar_patch: VERSION_PATCH,
+            program: *ctx.accounts.program.to_account_info().key,
+            program_name: inp_program_name,
+            developer_name: inp_developer_name,
+            developer_url: inp_developer_url,
+            source_url: inp_source_url,
+            verify_url: inp_verify_url,
+        };
+        let acc_info = &ctx.accounts.program_info.to_account_info();
+        let mut info_data = acc_info.try_borrow_mut_data()?;
         let info_dst: &mut [u8] = &mut info_data;
         let mut info_crs = Cursor::new(info_dst);
-        ra.try_serialize(&mut info_crs)?;
+        md.try_serialize(&mut info_crs)?;
+        msg!("Program: {}", ctx.accounts.program.key.to_string());
+        msg!("Program Name: {}", md.program_name.as_str());
+        msg!("Version: {}.{}.{}", VERSION_MAJOR.to_string(), VERSION_MINOR.to_string(), VERSION_PATCH.to_string());
+        msg!("Developer Name: {}", md.developer_name.as_str());
+        msg!("Developer URL: {}", md.developer_url.as_str());
+        msg!("Source URL: {}", md.source_url.as_str());
+        msg!("Verify URL: {}", md.verify_url.as_str());
         Ok(())
     }
 
@@ -621,6 +685,16 @@ pub struct Initialize<'info> {
 }
 
 #[derive(Accounts)]
+pub struct UpdateMetadata<'info> {
+    pub program: AccountInfo<'info>,
+    pub program_data: AccountInfo<'info>,
+    #[account(signer)]
+    pub program_admin: AccountInfo<'info>,
+    #[account(mut)]
+    pub program_info: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
 pub struct UpdateRBAC<'info> {
     pub root_data: ProgramAccount<'info, RootData>,
     #[account(mut)]
@@ -753,28 +827,15 @@ pub struct ProgramMetadata {
     pub semvar_major: u32,
     pub semvar_minor: u32,
     pub semvar_patch: u32,
+    pub program: Pubkey,
     pub program_name: String,   // Max len 64
     pub developer_name: String, // Max len 64
     pub developer_url: String,  // Max len 128
     pub source_url: String,     // Max len 128
+    pub verify_url: String,     // Max len 128
 }
-
-const DISCRIM_LEN: usize = 8;
-const SEMVAR_LEN: usize = 4;
-const STR_PREFIX_LEN: usize = 4;
-const MAX_PROG_NAME_LEN: usize = 64 * 4;
-const MAX_DEV_NAME_LEN: usize = 64 * 4;
-const MAX_DEV_URL_LEN: usize = 128 * 4;
-const MAX_SRC_URL_LEN: usize = 128 * 4;
-
-impl ProgramMetadata {
-    const LEN: usize = DISCRIM_LEN
-        + SEMVAR_LEN + SEMVAR_LEN + SEMVAR_LEN
-        + STR_PREFIX_LEN + MAX_PROG_NAME_LEN
-        + STR_PREFIX_LEN + MAX_DEV_NAME_LEN
-        + STR_PREFIX_LEN + MAX_DEV_URL_LEN
-        + STR_PREFIX_LEN + MAX_SRC_URL_LEN;
-}
+// 8 + (4 * 3) + (4 * 5) + (64 * 2) + (128 * 3) + 32
+// Data length (with discrim): 584 bytes
 
 #[error]
 pub enum ErrorCode {
