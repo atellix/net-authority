@@ -17,7 +17,7 @@ use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, Slab
 extern crate decode_account;
 use decode_account::parse_bpf_loader::{ parse_bpf_upgradeable_loader, BpfUpgradeableLoaderAccountType };
 
-declare_id!("Ckh1UPozjq5yPsf5iA3pCCPh8qqnCbnjpfhSBHGXTUdM");
+declare_id!("4FZP3dRoPHpEwsA3N4rUhXJK9X4bQySny4mfoXuaYcHV");
 
 pub const MAX_RBAC: u32 = 128;
 
@@ -237,14 +237,17 @@ mod net_authority {
         let funder_info = av.get(0).unwrap();
         let data_account_info = av.get(1).unwrap();
         let system_program_info = av.get(2).unwrap();
-        let (data_account_address, bump_seed) = Pubkey::find_program_address(
+        let (root_address, bump_seed) = Pubkey::find_program_address(
             &[ctx.program_id.as_ref()],
             ctx.program_id,
         );
-        if data_account_address != *data_account_info.key {
-            msg!("Invalid root data account");
-            return Err(ErrorCode::InvalidDerivedAccount.into());
-        }
+        verify_matching_accounts(&root_address, &data_account_info.key,
+            Some(String::from("Invalid root data account"))
+        )?;
+        verify_matching_accounts(&root_address, &ctx.accounts.root_data.to_account_info().key,
+            Some(String::from("Invalid root data account parameter"))
+        )?;
+
         let account_signer_seeds: &[&[_]] = &[
             ctx.program_id.as_ref(),
             &[bump_seed],
@@ -265,6 +268,7 @@ mod net_authority {
             ],
             &[account_signer_seeds],
         )?;
+
         let acc_root = &ctx.accounts.root_data.to_account_info();
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
         let ra = RootData {
@@ -280,6 +284,26 @@ mod net_authority {
         rd.setup_page_table();
         rd.allocate::<CritMapHeader, AnyNode>(DT::UserRBACMap as u16, MAX_RBAC as usize).expect("Failed to allocate");
         rd.allocate::<SlabVec, UserRBAC>(DT::UserRBAC as u16, MAX_RBAC as usize).expect("Failed to allocate");
+
+        Ok(())
+    }
+
+    pub fn update_metadata(ctx: Context<UpdateMetadata>,
+        inp_info_size: u64,
+        inp_info_rent: u64
+    ) -> ProgramResult {
+        {
+            let acc_prog = &ctx.accounts.program.to_account_info();
+            let acc_pdat = &ctx.accounts.program_data.to_account_info();
+            let acc_user = &ctx.accounts.program_admin.to_account_info();
+            verify_program_owner(ctx.program_id, &acc_prog, &acc_pdat, &acc_user)?;
+        }
+        let acc_info = &ctx.accounts.info_data.to_account_info();
+
+        let mut info_data = acc_root.try_borrow_mut_data()?;
+        let info_dst: &mut [u8] = &mut info_data;
+        let mut info_crs = Cursor::new(info_dst);
+        ra.try_serialize(&mut info_crs)?;
         Ok(())
     }
 
@@ -722,6 +746,34 @@ impl Default for ManagerApproval {
             manager_key: Pubkey::default(),
         }
     }
+}
+
+#[account]
+pub struct ProgramMetadata {
+    pub semvar_major: u32,
+    pub semvar_minor: u32,
+    pub semvar_patch: u32,
+    pub program_name: String,   // Max len 64
+    pub developer_name: String, // Max len 64
+    pub developer_url: String,  // Max len 128
+    pub source_url: String,     // Max len 128
+}
+
+const DISCRIM_LEN: usize = 8;
+const SEMVAR_LEN: usize = 4;
+const STR_PREFIX_LEN: usize = 4;
+const MAX_PROG_NAME_LEN: usize = 64 * 4;
+const MAX_DEV_NAME_LEN: usize = 64 * 4;
+const MAX_DEV_URL_LEN: usize = 128 * 4;
+const MAX_SRC_URL_LEN: usize = 128 * 4;
+
+impl ProgramMetadata {
+    const LEN: usize = DISCRIM_LEN
+        + SEMVAR_LEN + SEMVAR_LEN + SEMVAR_LEN
+        + STR_PREFIX_LEN + MAX_PROG_NAME_LEN
+        + STR_PREFIX_LEN + MAX_DEV_NAME_LEN
+        + STR_PREFIX_LEN + MAX_DEV_URL_LEN
+        + STR_PREFIX_LEN + MAX_SRC_URL_LEN;
 }
 
 #[error]
