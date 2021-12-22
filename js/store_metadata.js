@@ -15,21 +15,13 @@ const provider = anchor.Provider.env()
 anchor.setProvider(provider)
 const netAuthority = anchor.workspace.NetAuthority
 const netAuthorityPK = netAuthority.programId
-//console.log('Net Authority Program')
-//console.log(netAuthorityPK.toString())
 
 async function main() {
-    const netData = await jsonFileRead('../../data/net.json')
-
-    netData['netAuthorityProgram'] = netAuthorityPK.toString()
-
     var jsres = await exec('solana program show --output json ' + netAuthorityPK.toString())
     var res = JSON.parse(jsres.stdout)
     const programData = res.programdataAddress
-    netData['netAuthorityProgramData'] = programData
 
     const infoData = await programAddress([netAuthorityPK.toBuffer(), Buffer.from('metadata', 'utf8')], netAuthorityPK)
-    //const infoBytes = netAuthority.account.programMetadata.size
     const infoBytes = 584
     const infoRent = await provider.connection.getMinimumBalanceForRentExemption(infoBytes)
     console.log('Program Metadata')
