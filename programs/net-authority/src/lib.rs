@@ -8,7 +8,7 @@ use anchor_lang::prelude::*;
 use solana_program::{
     program::{ invoke_signed },
     account_info::AccountInfo,
-    system_instruction
+    system_instruction, system_program
 };
 
 extern crate slab_alloc;
@@ -17,7 +17,7 @@ use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, Slab
 extern crate decode_account;
 use decode_account::parse_bpf_loader::{ parse_bpf_upgradeable_loader, BpfUpgradeableLoaderAccountType };
 
-declare_id!("EENsfQstQpQMSTYqmiSssMEGB24pAgTvo9PxQ1SuxN8A");
+declare_id!("AKrFSvPusbtfxoF8q95mh4nZHKbuaj9fginAzVy7C4eg");
 
 pub const VERSION_MAJOR: u32 = 1;
 pub const VERSION_MINOR: u32 = 0;
@@ -231,25 +231,19 @@ mod net_authority {
         inp_root_size: u64,
         inp_root_rent: u64
     ) -> ProgramResult {
-        {
-            let acc_prog = &ctx.accounts.program.to_account_info();
-            let acc_pdat = &ctx.accounts.program_data.to_account_info();
-            let acc_user = &ctx.accounts.program_admin.to_account_info();
-            verify_program_owner(ctx.program_id, &acc_prog, &acc_pdat, &acc_user)?;
-        }
-        let av = ctx.remaining_accounts;
-        let funder_info = av.get(0).unwrap();
-        let data_account_info = av.get(1).unwrap();
-        let system_program_info = av.get(2).unwrap();
+        let acc_prog = &ctx.accounts.program.to_account_info();
+        let acc_pdat = &ctx.accounts.program_data.to_account_info();
+        let acc_user = &ctx.accounts.program_admin.to_account_info();
+        let acc_root = &ctx.accounts.root_data.to_account_info();
+        let acc_auth = &ctx.accounts.auth_data.to_account_info();
+        let acc_sys = &ctx.accounts.system_program.to_account_info();
+        verify_program_owner(ctx.program_id, &acc_prog, &acc_pdat, &acc_user)?;
         let (root_address, bump_seed) = Pubkey::find_program_address(
             &[ctx.program_id.as_ref()],
             ctx.program_id,
         );
-        verify_matching_accounts(&root_address, &data_account_info.key,
-            Some(String::from("Invalid root data account"))
-        )?;
         verify_matching_accounts(&root_address, &ctx.accounts.root_data.to_account_info().key,
-            Some(String::from("Invalid root data account parameter"))
+            Some(String::from("Invalid root data account"))
         )?;
 
         let account_signer_seeds: &[&[_]] = &[
@@ -259,22 +253,20 @@ mod net_authority {
         msg!("Create root data account");
         invoke_signed(
             &system_instruction::create_account(
-                funder_info.key,
-                data_account_info.key,
+                acc_user.key,
+                acc_root.key,
                 inp_root_rent,
                 inp_root_size,
                 ctx.program_id
             ),
             &[
-                funder_info.clone(),
-                data_account_info.clone(),
-                system_program_info.clone(),
+                acc_user.clone(),
+                acc_root.clone(),
+                acc_sys.clone(),
             ],
             &[account_signer_seeds],
         )?;
 
-        let acc_root = &ctx.accounts.root_data.to_account_info();
-        let acc_auth = &ctx.accounts.auth_data.to_account_info();
         let ra = RootData {
             root_authority: *acc_auth.key,
         };
@@ -302,26 +294,19 @@ mod net_authority {
         inp_source_url: String,
         inp_verify_url: String,
     ) -> ProgramResult {
-        {
-            let acc_prog = &ctx.accounts.program.to_account_info();
-            let acc_pdat = &ctx.accounts.program_data.to_account_info();
-            let acc_user = &ctx.accounts.program_admin.to_account_info();
-            verify_program_owner(ctx.program_id, &acc_prog, &acc_pdat, &acc_user)?;
-        }
+        let acc_prog = &ctx.accounts.program.to_account_info();
+        let acc_pdat = &ctx.accounts.program_data.to_account_info();
+        let acc_user = &ctx.accounts.program_admin.to_account_info();
+        let acc_info = &ctx.accounts.program_info.to_account_info();
+        let acc_sys = &ctx.accounts.system_program.to_account_info();
+        verify_program_owner(ctx.program_id, &acc_prog, &acc_pdat, &acc_user)?;
         if inp_create {
-            let av = ctx.remaining_accounts;
-            let funder_info = av.get(0).unwrap();
-            let data_account_info = av.get(1).unwrap();
-            let system_program_info = av.get(2).unwrap();
             let (info_address, bump_seed) = Pubkey::find_program_address(
                 &[ctx.program_id.as_ref(), String::from("metadata").as_ref()],
                 ctx.program_id,
             );
-            verify_matching_accounts(&info_address, &data_account_info.key,
+            verify_matching_accounts(&info_address, &acc_info.key,
                 Some(String::from("Invalid program_info account"))
-            )?;
-            verify_matching_accounts(&info_address, &ctx.accounts.program_info.to_account_info().key,
-                Some(String::from("Invalid program_info account parameter"))
             )?;
             let mdstr = String::from("metadata");
             let account_signer_seeds: &[&[_]] = &[
@@ -331,16 +316,16 @@ mod net_authority {
             ];
             invoke_signed(
                 &system_instruction::create_account(
-                    funder_info.key,
-                    data_account_info.key,
+                    acc_user.key,
+                    acc_info.key,
                     inp_info_rent,
                     inp_info_size,
                     ctx.program_id
                 ),
                 &[
-                    funder_info.clone(),
-                    data_account_info.clone(),
-                    system_program_info.clone(),
+                    acc_user.clone(),
+                    acc_info.clone(),
+                    acc_sys.clone(),
                 ],
                 &[account_signer_seeds],
             )?;
@@ -682,6 +667,8 @@ pub struct Initialize<'info> {
     pub program_data: AccountInfo<'info>,
     #[account(signer)]
     pub program_admin: AccountInfo<'info>,
+    #[account(address = system_program::ID)]
+    pub system_program: AccountInfo<'info>,
 }
 
 #[derive(Accounts)]
@@ -692,6 +679,8 @@ pub struct UpdateMetadata<'info> {
     pub program_admin: AccountInfo<'info>,
     #[account(mut)]
     pub program_info: AccountInfo<'info>,
+    #[account(address = system_program::ID)]
+    pub system_program: AccountInfo<'info>,
 }
 
 #[derive(Accounts)]
