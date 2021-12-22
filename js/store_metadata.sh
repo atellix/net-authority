@@ -50,13 +50,9 @@ async function main() {
                 program: netAuthorityPK,
                 programAdmin: provider.wallet.publicKey,
                 programData: new PublicKey(programData),
-                programInfo: new PublicKey(infoData.pubkey)
-            },
-            remainingAccounts: [
-                { pubkey: provider.wallet.publicKey, isWritable: true, isSigner: true },
-                { pubkey: new PublicKey(infoData.pubkey), isWritable: true, isSigner: false },
-                { pubkey: SystemProgram.programId, isWritable: false, isSigner: false }
-            ]
+                programInfo: new PublicKey(infoData.pubkey),
+                systemProgram: SystemProgram.programId
+            }
         }
     )
 }

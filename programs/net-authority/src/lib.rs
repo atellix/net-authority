@@ -660,6 +660,7 @@ mod net_authority {
 
 #[derive(Accounts)]
 pub struct Initialize<'info> {
+    #[account(mut)]
     pub root_data: AccountInfo<'info>,
     #[account(mut)]
     pub auth_data: AccountInfo<'info>,

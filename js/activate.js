@@ -95,13 +95,9 @@ async function main() {
                 programAdmin: provider.wallet.publicKey,
                 programData: new PublicKey(programData),
                 rootData: new PublicKey(rootData.pubkey),
-                authData: authData.publicKey
-            },
-            remainingAccounts: [
-                { pubkey: provider.wallet.publicKey, isWritable: true, isSigner: true },
-                { pubkey: new PublicKey(rootData.pubkey), isWritable: true, isSigner: false },
-                { pubkey: SystemProgram.programId, isWritable: false, isSigner: false }
-            ]
+                authData: authData.publicKey,
+                systemProgram: SystemProgram.programId
+            }
         }
     )
 
