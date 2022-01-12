@@ -178,7 +178,8 @@ async function main() {
 
     // TODO: Fund associated token account for all relevant mints
 
-    console.log('Approve Merchant 1')
+    // Moved to separate script
+    /*console.log('Approve Merchant 1')
     await netAuthority.rpc.approveMerchant(
         rootData.nonce,
         100,
@@ -194,7 +195,7 @@ async function main() {
             },
             signers: [mchAdmin],
         }
-    )
+    )*/
 
 /*    console.log('Revoke 1')
     await netAuthority.rpc.revoke(
