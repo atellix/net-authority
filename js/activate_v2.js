@@ -58,6 +58,7 @@ async function main() {
 
     const mchAdminPK = new PublicKey(netKeys['merchant-admin-1-public'])
     netData['merchantAdmin1'] = mchAdminPK.toString()
+    netData['merchantAdmin1_seret'] = netKeys['merchant-admin-1-secret']
 
     const fees1 = new PublicKey(netKeys['merchant-fees-1-public'])
     const fees1token = await associatedTokenAddress(fees1, tokenMint)
