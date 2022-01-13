@@ -17,10 +17,11 @@ const netAuthority = anchor.workspace.NetAuthority
 const netAuthorityPK = netAuthority.programId
 
 async function main() {
+    const netKeys = await jsonFileRead('../../data/export/network_keys.json')
     const netData = await jsonFileRead('../../data/net.json')
 
     const rootData = await programAddress([netAuthorityPK.toBuffer()], netAuthorityPK)
-    const mchAdmin = importSecretKey(netData.merchantAdmin1_secret)
+    const mchAdmin = importSecretKey(netKeys['merchant-admin-1-secret'])
 
     const tokenMint = new PublicKey(netData['tokenMintUSDV'])
     // TODO: Fund associated token account for all relevant mints
