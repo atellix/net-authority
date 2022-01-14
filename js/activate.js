@@ -72,12 +72,17 @@ async function main() {
     netData['managerApproval1'] = mgrApproval1.publicKey.toString()
     netData['managerApproval1_secret'] = exportSecretKey(mgrApproval1)
 
+    console.log('Create Merchant 1')
     const mch1 = anchor.web3.Keypair.generate()
     const mchApproval1 = anchor.web3.Keypair.generate()
     netData['merchant1'] = mch1.publicKey.toString()
     netData['merchant1_secret'] = exportSecretKey(mch1)
     netData['merchantApproval1'] = mchApproval1.publicKey.toString()
     netData['merchantApproval1_secret'] = exportSecretKey(mchApproval1)
+
+    console.log('Create Merchant 1 Token Account: USDV')
+    var res = await exec('spl-token create-account ' + netData['tokenMintUSDV'] + ' --output json')
+    console.log(res.stdout)
 
     console.log('Create Auth Account')
     const tx = new anchor.web3.Transaction()
