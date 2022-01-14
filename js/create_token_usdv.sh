@@ -19,6 +19,6 @@ spl-token authorize -C $CFG_MINT --fee-payer $PAYER $PUB_TOKEN freeze $PUB_FREEZ
 spl-token create-account -C $CFG_MINT $PUB_TOKEN --fee-payer $PAYER --owner $PUB_TREASURY
 spl-token mint -v -C $CFG_MINT --fee-payer $PAYER --mint-authority $KEY_MINT $PUB_TOKEN 1000000000000000 $ATA_TREASURY
 
-echo -n "Token: "
+echo -n "Created USDV Token Mint: "
 echo $PUB_TOKEN
 
