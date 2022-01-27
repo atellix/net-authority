@@ -550,6 +550,86 @@ mod net_authority {
         Ok(())
     }
 
+    pub fn store_merchant_details(ctx: Context<UpdateMerchantDetails>,
+        inp_root_nonce: u8,
+        inp_create: bool,
+        inp_active: bool,
+        inp_info_size: u64,
+        inp_info_rent: u64,
+        inp_merchant_name: String,
+        inp_merchant_url: String,
+        inp_verify_url: String,
+    ) -> ProgramResult {
+        let acc_user = &ctx.accounts.fee_payer.to_account_info();       // Payer
+        let acc_admn = &ctx.accounts.merchant_admin.to_account_info();  // Merchant admin
+        let acc_info = &ctx.accounts.merchant_info.to_account_info();
+        let acc_root = &ctx.accounts.root_data.to_account_info();
+        let acc_auth = &ctx.accounts.auth_data.to_account_info();
+        let acc_sys = &ctx.accounts.system_program.to_account_info();
+
+        // Verify program data
+        let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
+            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
+        verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
+        verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
+
+        // Check for MerchantAdmin authority
+        let admin_role = has_role(&acc_auth, Role::MerchantAdmin, acc_admn.key);
+        if admin_role.is_err() {
+            msg!("Not merchant admin");
+            return Err(ErrorCode::AccessDenied.into());
+        }
+
+        if inp_create {
+            let (info_address, bump_seed) = Pubkey::find_program_address(
+                &[ctx.accounts.merchant_key.to_account_info().key.as_ref(), String::from("merchant-details").as_ref()],
+                ctx.program_id,
+            );
+            verify_matching_accounts(&info_address, &acc_info.key,
+                Some(String::from("Invalid merchant detail account"))
+            )?;
+            let mdstr = String::from("merchant-details");
+            let account_signer_seeds: &[&[_]] = &[
+                ctx.accounts.merchant_key.to_account_info().key.as_ref(),
+                mdstr.as_ref(),
+                &[bump_seed],
+            ];
+            invoke_signed(
+                &system_instruction::create_account(
+                    acc_user.key,
+                    acc_info.key,
+                    inp_info_rent,
+                    inp_info_size,
+                    ctx.program_id
+                ),
+                &[
+                    acc_user.clone(),
+                    acc_info.clone(),
+                    acc_sys.clone(),
+                ],
+                &[account_signer_seeds],
+            )?;
+        }
+        let md = MerchantDetails {
+            active: inp_active,
+            merchant_key: *ctx.accounts.merchant_key.to_account_info().key,
+            merchant_name: inp_merchant_name,
+            merchant_url: inp_merchant_url,
+            verify_url: inp_verify_url,
+        };
+        let acc_info = &ctx.accounts.merchant_info.to_account_info();
+        let mut info_data = acc_info.try_borrow_mut_data()?;
+        let info_dst: &mut [u8] = &mut info_data;
+        let mut info_crs = Cursor::new(info_dst);
+        md.try_serialize(&mut info_crs)?;
+        msg!("Merchant Name: {}", md.merchant_name.as_str());
+        msg!("Merchant Key: {}", ctx.accounts.merchant_key.key.to_string());
+        msg!("Merchant URL: {}", md.merchant_url.as_str());
+        msg!("Verify URL: {}", md.verify_url.as_str());
+        msg!("Active: {}", md.active);
+        Ok(())
+    }
+
     pub fn record_revenue(ctx: Context<RecordRevenue>,
         inp_root_nonce: u8,
         inp_incoming: bool,
@@ -720,6 +800,21 @@ pub struct UpdateMerchant<'info> {
 }
 
 #[derive(Accounts)]
+pub struct UpdateMerchantDetails<'info> {
+    pub root_data: ProgramAccount<'info, RootData>,
+    pub auth_data: AccountInfo<'info>,
+    #[account(signer)]
+    pub fee_payer: AccountInfo<'info>,
+    #[account(signer)]
+    pub merchant_admin: AccountInfo<'info>,
+    pub merchant_key: AccountInfo<'info>,
+    #[account(mut)]
+    pub merchant_info: AccountInfo<'info>,
+    #[account(address = system_program::ID)]
+    pub system_program: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
 pub struct RecordRevenue<'info> {
     pub root_data: ProgramAccount<'info, RootData>,
     pub auth_data: AccountInfo<'info>,
@@ -812,6 +907,17 @@ impl Default for ManagerApproval {
 }
 
 #[account]
+pub struct MerchantDetails {
+    pub active: bool,
+    pub merchant_key: Pubkey,
+    pub merchant_name: String,  // Max len 64
+    pub merchant_url: String,   // Max len 128
+    pub verify_url: String,     // Max len 128
+}
+// 8 + 1 + 32 + (4 * 3) + 64 + (128 * 2)
+// Data length (with discrim): 373 bytes
+
+#[account]
 pub struct ProgramMetadata {
     pub semvar_major: u32,
     pub semvar_minor: u32,
@@ -823,7 +929,7 @@ pub struct ProgramMetadata {
     pub source_url: String,     // Max len 128
     pub verify_url: String,     // Max len 128
 }
-// 8 + (4 * 3) + (4 * 5) + (64 * 2) + (128 * 3) + 32
+// 8 + (4 * 3) + 32 + (4 * 5) + (64 * 2) + (128 * 3)
 // Data length (with discrim): 584 bytes
 
 #[error]
