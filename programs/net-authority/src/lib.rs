@@ -505,6 +505,7 @@ mod net_authority {
             fees_account: *ctx.accounts.fees_account.to_account_info().key,
             fees_bps: inp_fees_bps,
             revenue: 0,
+            tx_count: 0,
         };
         let mut aprv_data = acc_aprv.try_borrow_mut_data()?;
         let disc_bytes = array_ref![aprv_data, 0, 8];
@@ -547,6 +548,30 @@ mod net_authority {
         acc_aprv.fees_account = *ctx.accounts.fees_account.to_account_info().key;
         acc_aprv.fees_bps = inp_fees_bps;
 
+        Ok(())
+    }
+
+    pub fn close_merchant_approval(ctx: Context<CloseMerchantApproval>,
+        inp_root_nonce: u8,
+    ) -> ProgramResult {
+        let acc_admn = &ctx.accounts.merchant_admin.to_account_info();  // Merchant admin
+        let acc_root = &ctx.accounts.root_data.to_account_info();
+        let acc_auth = &ctx.accounts.auth_data.to_account_info();
+
+        // Verify program data
+        let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
+            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
+        verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
+        verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
+
+        // Check for MerchantAdmin authority
+        let admin_role = has_role(&acc_auth, Role::MerchantAdmin, acc_admn.key);
+        if admin_role.is_err() {
+            msg!("Not merchant admin");
+            return Err(ErrorCode::AccessDenied.into());
+        }
+
+        msg!("Closed Merchant Approval: {}", ctx.accounts.merchant_approval.to_account_info().key.to_string());
         Ok(())
     }
 
@@ -630,6 +655,30 @@ mod net_authority {
         Ok(())
     }
 
+    pub fn close_merchant_details(ctx: Context<CloseMerchantDetails>,
+        inp_root_nonce: u8,
+    ) -> ProgramResult {
+        let acc_admn = &ctx.accounts.merchant_admin.to_account_info();  // Merchant admin
+        let acc_root = &ctx.accounts.root_data.to_account_info();
+        let acc_auth = &ctx.accounts.auth_data.to_account_info();
+
+        // Verify program data
+        let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
+            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
+        verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
+        verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
+
+        // Check for MerchantAdmin authority
+        let admin_role = has_role(&acc_auth, Role::MerchantAdmin, acc_admn.key);
+        if admin_role.is_err() {
+            msg!("Not merchant admin");
+            return Err(ErrorCode::AccessDenied.into());
+        }
+
+        msg!("Closed Merchant Details: {}", ctx.accounts.merchant_info.to_account_info().key.to_string());
+        Ok(())
+    }
+
     pub fn record_revenue(ctx: Context<RecordRevenue>,
         inp_root_nonce: u8,
         inp_incoming: bool,
@@ -665,6 +714,9 @@ mod net_authority {
         } else {
             acc_aprv.revenue = acc_aprv.revenue.checked_sub(inp_amount as u64).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         }
+
+        // Increment transaction counter
+        acc_aprv.tx_count = acc_aprv.tx_count.checked_add(1).ok_or(ProgramError::from(ErrorCode::Overflow))?;
 
         Ok(())
     }
@@ -735,6 +787,30 @@ mod net_authority {
 
         Ok(())
     }
+
+    pub fn close_manager_approval(ctx: Context<CloseManagerApproval>,
+        inp_root_nonce: u8,
+    ) -> ProgramResult {
+        let acc_admn = &ctx.accounts.manager_admin.to_account_info();  // Merchant admin
+        let acc_root = &ctx.accounts.root_data.to_account_info();
+        let acc_auth = &ctx.accounts.auth_data.to_account_info();
+
+        // Verify program data
+        let acc_root_expected = Pubkey::create_program_address(&[ctx.program_id.as_ref(), &[inp_root_nonce]], ctx.program_id)
+            .map_err(|_| ErrorCode::InvalidDerivedAccount)?;
+        verify_matching_accounts(acc_root.key, &acc_root_expected, Some(String::from("Invalid root data")))?;
+        verify_matching_accounts(acc_auth.key, &ctx.accounts.root_data.root_authority, Some(String::from("Invalid root authority")))?;
+
+        // Check for MerchantAdmin authority
+        let admin_role = has_role(&acc_auth, Role::ManagerAdmin, acc_admn.key);
+        if admin_role.is_err() {
+            msg!("Not manager admin");
+            return Err(ErrorCode::AccessDenied.into());
+        }
+
+        msg!("Closed Manager Approval: {}", ctx.accounts.manager_approval.to_account_info().key.to_string());
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -800,6 +876,18 @@ pub struct UpdateMerchant<'info> {
 }
 
 #[derive(Accounts)]
+pub struct CloseMerchantApproval<'info> {
+    pub root_data: ProgramAccount<'info, RootData>,
+    pub auth_data: AccountInfo<'info>,
+    #[account(signer)]
+    pub merchant_admin: AccountInfo<'info>,
+    #[account(signer)]
+    pub fee_receiver: AccountInfo<'info>,
+    #[account(mut, close = fee_receiver)]
+    pub merchant_approval: ProgramAccount<'info, MerchantApproval>,
+}
+
+#[derive(Accounts)]
 pub struct UpdateMerchantDetails<'info> {
     pub root_data: ProgramAccount<'info, RootData>,
     pub auth_data: AccountInfo<'info>,
@@ -812,6 +900,18 @@ pub struct UpdateMerchantDetails<'info> {
     pub merchant_info: AccountInfo<'info>,
     #[account(address = system_program::ID)]
     pub system_program: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct CloseMerchantDetails<'info> {
+    pub root_data: ProgramAccount<'info, RootData>,
+    pub auth_data: AccountInfo<'info>,
+    #[account(signer)]
+    pub merchant_admin: AccountInfo<'info>,
+    #[account(signer)]
+    pub fee_receiver: AccountInfo<'info>,
+    #[account(mut, close = fee_receiver)]
+    pub merchant_info: ProgramAccount<'info, MerchantDetails>,
 }
 
 #[derive(Accounts)]
@@ -842,6 +942,18 @@ pub struct UpdateManager<'info> {
     #[account(signer)]
     pub manager_admin: AccountInfo<'info>,
     #[account(mut)]
+    pub manager_approval: ProgramAccount<'info, ManagerApproval>,
+}
+
+#[derive(Accounts)]
+pub struct CloseManagerApproval<'info> {
+    pub root_data: ProgramAccount<'info, RootData>,
+    pub auth_data: AccountInfo<'info>,
+    #[account(signer)]
+    pub manager_admin: AccountInfo<'info>,
+    #[account(signer)]
+    pub fee_receiver: AccountInfo<'info>,
+    #[account(mut, close = fee_receiver)]
     pub manager_approval: ProgramAccount<'info, ManagerApproval>,
 }
 
@@ -876,6 +988,7 @@ pub struct MerchantApproval {
     pub fees_account: Pubkey,
     pub fees_bps: u32,
     pub revenue: u64,
+    pub tx_count: u64,
 }
 
 impl Default for MerchantApproval {
@@ -887,6 +1000,7 @@ impl Default for MerchantApproval {
             fees_account: Pubkey::default(),
             fees_bps: 0,
             revenue: 0,
+            tx_count: 0,
         }
     }
 }
