@@ -9,7 +9,7 @@ use solana_program::{ account_info::AccountInfo };
 extern crate slab_alloc;
 use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, SlabVec, SlabTreeError };
 
-declare_id!("AUTHwjaSUwd5wUfakxt29KPabCk6wrrikLWm4yYTncwo");
+declare_id!("FBcEQLTQvqxWRpKmYcr6hY6i6mCP3FshYSag5DtZ8iH7");
 
 pub const VERSION_MAJOR: u32 = 1;
 pub const VERSION_MINOR: u32 = 0;
@@ -577,7 +577,7 @@ pub struct UpdateRBAC<'info> {
 pub struct ApproveMerchant<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
-    #[account(mut, constraint = root_data.root_authority == auth_data.key())]
+    #[account(constraint = root_data.root_authority == auth_data.key())]
     pub auth_data: UncheckedAccount<'info>,
     #[account(mut)]
     pub merchant_admin: Signer<'info>,
@@ -594,7 +594,7 @@ pub struct ApproveMerchant<'info> {
 pub struct UpdateMerchant<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
-    #[account(mut, constraint = root_data.root_authority == auth_data.key())]
+    #[account(constraint = root_data.root_authority == auth_data.key())]
     pub auth_data: UncheckedAccount<'info>,
     #[account(mut)]
     pub merchant_admin: Signer<'info>,
@@ -608,7 +608,7 @@ pub struct UpdateMerchant<'info> {
 pub struct CloseMerchantApproval<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
-    #[account(mut, constraint = root_data.root_authority == auth_data.key())]
+    #[account(constraint = root_data.root_authority == auth_data.key())]
     pub auth_data: UncheckedAccount<'info>,
     #[account(mut)]
     pub merchant_admin: Signer<'info>,
@@ -623,7 +623,7 @@ pub struct CloseMerchantApproval<'info> {
 pub struct UpdateMerchantDetails<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
-    #[account(mut, constraint = root_data.root_authority == auth_data.key())]
+    #[account(constraint = root_data.root_authority == auth_data.key())]
     pub auth_data: UncheckedAccount<'info>,
     #[account(mut)]
     pub fee_payer: Signer<'info>,
@@ -640,7 +640,7 @@ pub struct UpdateMerchantDetails<'info> {
 pub struct CloseMerchantDetails<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
-    #[account(mut, constraint = root_data.root_authority == auth_data.key())]
+    #[account(constraint = root_data.root_authority == auth_data.key())]
     pub auth_data: UncheckedAccount<'info>,
     #[account(mut)]
     pub merchant_admin: Signer<'info>,
@@ -655,9 +655,8 @@ pub struct CloseMerchantDetails<'info> {
 pub struct RecordRevenue<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
-    #[account(mut, constraint = root_data.root_authority == auth_data.key())]
+    #[account(constraint = root_data.root_authority == auth_data.key())]
     pub auth_data: UncheckedAccount<'info>,
-    #[account(mut)]
     pub revenue_admin: Signer<'info>,
     #[account(mut)]
     pub merchant_approval: Account<'info, MerchantApproval>,
@@ -668,7 +667,7 @@ pub struct RecordRevenue<'info> {
 pub struct ApproveManager<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
-    #[account(mut, constraint = root_data.root_authority == auth_data.key())]
+    #[account(constraint = root_data.root_authority == auth_data.key())]
     pub auth_data: UncheckedAccount<'info>,
     #[account(mut)]
     pub manager_admin: Signer<'info>,
@@ -683,7 +682,7 @@ pub struct ApproveManager<'info> {
 pub struct UpdateManager<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
-    #[account(mut, constraint = root_data.root_authority == auth_data.key())]
+    #[account(constraint = root_data.root_authority == auth_data.key())]
     pub auth_data: UncheckedAccount<'info>,
     #[account(signer)]
     pub manager_admin: AccountInfo<'info>,
@@ -696,7 +695,7 @@ pub struct UpdateManager<'info> {
 pub struct CloseManagerApproval<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
-    #[account(mut, constraint = root_data.root_authority == auth_data.key())]
+    #[account(constraint = root_data.root_authority == auth_data.key())]
     pub auth_data: UncheckedAccount<'info>,
     #[account(mut)]
     pub manager_admin: Signer<'info>,

@@ -15,8 +15,8 @@ const provider = anchor.Provider.env()
 anchor.setProvider(provider)
 const netAuthority = anchor.workspace.NetAuthority
 const netAuthorityPK = netAuthority.programId
-//console.log('Net Authority Program')
-//console.log(netAuthorityPK.toString())
+console.log('Net Authority Program')
+console.log(netAuthorityPK.toString())
 
 async function main() {
     const netKeys = await jsonFileRead('../../data/export/network_keys.json')
@@ -81,7 +81,7 @@ async function main() {
     netData['merchantApproval1_secret'] = exportSecretKey(mchApproval1)
 
     console.log('Create Merchant 1 Token Account: USDV')
-    var res = await exec('spl-token create-account ' + netData['tokenMintUSDV'] + ' --output json')
+    var res = await exec('spl-token create-account ' + netData['tokenMintUSDV'] + ' --owner ' + netData['merchant1'] + ' --output json')
     console.log(res.stdout)
 
     console.log('Create Auth Account')
@@ -99,8 +99,6 @@ async function main() {
 
     console.log('Initialize')
     await netAuthority.rpc.initialize(
-        new anchor.BN(rootBytes),
-        new anchor.BN(rootRent),
         {
             accounts: {
                 program: netAuthorityPK,
@@ -164,7 +162,7 @@ async function main() {
     )
     console.log('Grant 3 Done')
 
-    console.log('Create Manager 1 Approval Account')
+    /*console.log('Create Manager 1 Approval Account')
     const tx2 = new anchor.web3.Transaction()
     tx2.add(
         anchor.web3.SystemProgram.createAccount({
@@ -175,9 +173,9 @@ async function main() {
             programId: netAuthorityPK,
         })
     )
-    await provider.send(tx2, [mgrApproval1])
+    await provider.send(tx2, [mgrApproval1])*/
 
-    console.log('Create Merchant 1 Approval Account')
+    /*console.log('Create Merchant 1 Approval Account')
     const tx3 = new anchor.web3.Transaction()
     tx3.add(
         anchor.web3.SystemProgram.createAccount({
@@ -188,23 +186,35 @@ async function main() {
             programId: netAuthorityPK,
         })
     )
-    await provider.send(tx3, [mchApproval1])
+    await provider.send(tx3, [mchApproval1])*/
  
     console.log('Approve Manager 1')
-    await netAuthority.rpc.approveManager(
-        rootData.nonce,
-        {
-            accounts: {
-                rootData: new PublicKey(rootData.pubkey),
-                authData: authData.publicKey,
-                managerAdmin: mgrAdmin.publicKey,
-                managerApproval: mgrApproval1.publicKey,
-                managerKey: mgr1,
-            },
-            signers: [mgrAdmin],
-        }
+    const tx2 = new anchor.web3.Transaction()
+    tx2.add(
+        anchor.web3.SystemProgram.transfer({
+            fromPubkey: provider.wallet.publicKey,
+            toPubkey: mgrAdmin.publicKey,
+            lamports: await provider.connection.getMinimumBalanceForRentExemption(netAuthority.account.managerApproval.size),
+        })
     )
+    tx2.add(
+        netAuthority.instruction.approveManager(
+            rootData.nonce,
+            {
+                accounts: {
+                    rootData: new PublicKey(rootData.pubkey),
+                    authData: authData.publicKey,
+                    managerAdmin: mgrAdmin.publicKey,
+                    managerApproval: mgrApproval1.publicKey,
+                    managerKey: mgr1,
+                    systemProgram: SystemProgram.programId,
+                },
+            }
+        )
+    )
+    await provider.send(tx2, [mgrAdmin, mgrApproval1])
 
+    console.log(netData)
     await jsonFileWrite('../../data/net.json', netData)
 }
 
