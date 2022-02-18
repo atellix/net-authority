@@ -367,6 +367,8 @@ mod net_authority {
         aprv.active = inp_active;
         aprv.fees_account = *ctx.accounts.fees_account.to_account_info().key;
         aprv.fees_bps = inp_fees_bps;
+        aprv.revenue_admin = *ctx.accounts.revenue_admin.to_account_info().key;
+        aprv.swap_admin = *ctx.accounts.swap_admin.to_account_info().key;
 
         Ok(())
     }
@@ -597,6 +599,8 @@ pub struct UpdateMerchant<'info> {
     #[account(mut)]
     pub merchant_approval: Account<'info, MerchantApproval>,
     pub fees_account: UncheckedAccount<'info>,
+    pub revenue_admin: UncheckedAccount<'info>,
+    pub swap_admin: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
