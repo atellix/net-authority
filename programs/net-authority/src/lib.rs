@@ -9,7 +9,7 @@ use solana_program::{ account_info::AccountInfo };
 extern crate slab_alloc;
 use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, SlabVec, SlabTreeError };
 
-declare_id!("FBcEQLTQvqxWRpKmYcr6hY6i6mCP3FshYSag5DtZ8iH7");
+declare_id!("3Ss3tq7W2q5hgh9DcJArZkHaWUai1Q5CfZymS5vAeGSn");
 
 pub const VERSION_MAJOR: u32 = 1;
 pub const VERSION_MINOR: u32 = 0;
@@ -338,6 +338,8 @@ mod net_authority {
         aprv.merchant_key = *ctx.accounts.merchant_key.to_account_info().key;
         aprv.token_mint = *ctx.accounts.token_mint.to_account_info().key;
         aprv.fees_account = *ctx.accounts.fees_account.to_account_info().key;
+        aprv.revenue_admin = *ctx.accounts.revenue_admin.to_account_info().key;
+        aprv.swap_admin = *ctx.accounts.swap_admin.to_account_info().key;
         aprv.fees_bps = inp_fees_bps;
         aprv.revenue = 0;
         aprv.tx_count = 0;
@@ -435,20 +437,10 @@ mod net_authority {
     }
 
     pub fn record_revenue(ctx: Context<RecordRevenue>,
-        _inp_root_nonce: u8,
         inp_incoming: bool,
         inp_amount: u64,
     ) -> ProgramResult {
         let acc_admn = &ctx.accounts.revenue_admin.to_account_info(); // Revenue admin
-        let acc_auth = &ctx.accounts.auth_data.to_account_info();
-
-        // Check for RevenueAdmin authority
-        let admin_role = has_role(&acc_auth, Role::RevenueAdmin, acc_admn.key);
-        if admin_role.is_err() {
-            msg!("Not revenue admin");
-            return Err(ErrorCode::AccessDenied.into());
-        }
-
         //msg!("Atellix: Update merchant revenue: {}", inp_amount.to_string());
 
         // Update approval account
@@ -458,8 +450,10 @@ mod net_authority {
             return Err(ErrorCode::AccessDenied.into());
         }
         if inp_incoming {
+            verify_matching_accounts(&acc_aprv.revenue_admin, acc_admn.key, Some(String::from("Invalid revenue admin")))?;
             acc_aprv.revenue = acc_aprv.revenue.checked_add(inp_amount as u64).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         } else {
+            verify_matching_accounts(&acc_aprv.swap_admin, acc_admn.key, Some(String::from("Invalid swap admin")))?;
             acc_aprv.revenue = acc_aprv.revenue.checked_sub(inp_amount as u64).ok_or(ProgramError::from(ErrorCode::Overflow))?;
         }
 
@@ -586,6 +580,8 @@ pub struct ApproveMerchant<'info> {
     pub merchant_key: UncheckedAccount<'info>,
     pub token_mint: UncheckedAccount<'info>,
     pub fees_account: UncheckedAccount<'info>,
+    pub revenue_admin: UncheckedAccount<'info>,
+    pub swap_admin: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
 }
 
@@ -651,12 +647,7 @@ pub struct CloseMerchantDetails<'info> {
 }
 
 #[derive(Accounts)]
-#[instruction(_inp_root_nonce: u8)]
 pub struct RecordRevenue<'info> {
-    #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
-    pub root_data: Account<'info, RootData>,
-    #[account(constraint = root_data.root_authority == auth_data.key())]
-    pub auth_data: UncheckedAccount<'info>,
     pub revenue_admin: Signer<'info>,
     #[account(mut)]
     pub merchant_approval: Account<'info, MerchantApproval>,
@@ -734,6 +725,8 @@ pub struct MerchantApproval {
     pub merchant_key: Pubkey,
     pub token_mint: Pubkey,
     pub fees_account: Pubkey,
+    pub revenue_admin: Pubkey,
+    pub swap_admin: Pubkey,
     pub fees_bps: u32,
     pub revenue: u64,
     pub tx_count: u64,
@@ -746,6 +739,8 @@ impl Default for MerchantApproval {
             merchant_key: Pubkey::default(),
             token_mint: Pubkey::default(),
             fees_account: Pubkey::default(),
+            revenue_admin: Pubkey::default(),
+            swap_admin: Pubkey::default(),
             fees_bps: 0,
             revenue: 0,
             tx_count: 0,

@@ -19,9 +19,15 @@ const netAuthorityPK = netAuthority.programId
 async function main() {
     const netKeys = await jsonFileRead('../../data/export/network_keys.json')
     const netData = await jsonFileRead('../../data/net.json')
+    const swpData = await jsonFileRead('../../data/swap.json')
 
     const rootData = await programAddress([netAuthorityPK.toBuffer()], netAuthorityPK)
     const mchAdmin = importSecretKey(netKeys['merchant-admin-1-secret'])
+
+    const revenueProgram = new PublicKey(netData.tokenAgentProgram)
+    const swapProgram = new PublicKey(swpData.swapContractProgram)
+    const revenueAdmin = await programAddress([revenueProgram.toBuffer()], revenueProgram)
+    const swapAdmin = await programAddress([swapProgram.toBuffer()], swapProgram)
 
     const tokenMint = new PublicKey(netData['tokenMintUSDV'])
     // TODO: Fund associated token account for all relevant mints
@@ -50,6 +56,8 @@ async function main() {
                     merchantKey: new PublicKey(netData.merchant1),
                     tokenMint: tokenMint,
                     feesAccount: new PublicKey(netData.fees1_token),
+                    revenueAdmin: new PublicKey(revenueAdmin.pubkey),
+                    swapAdmin: new PublicKey(swapAdmin.pubkey),
                     systemProgram: SystemProgram.programId,
                 },
             }
