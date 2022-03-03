@@ -32,3 +32,6 @@ spl-token create-account $TOKEN_WSOL --owner $PUB_TREASURY2
 spl-token create-account $TOKEN_USDC --owner $PUB_TREASURY2
 spl-token create-account $TOKEN_USDV --owner $PUB_TREASURY2
 
+# TODO: Create additional ATAs
+# Token Agent / USDV
+# Swap Vaults
