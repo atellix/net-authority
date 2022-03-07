@@ -9,7 +9,7 @@ use solana_program::{ account_info::AccountInfo };
 extern crate slab_alloc;
 use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, SlabVec, SlabTreeError };
 
-declare_id!("AUTHq1YfR81nVAUSbpmift4jWfaS87JXTtyzVHNxS9Wm");
+declare_id!("AUTHXb39qs2VyztqH9zqh3LLLVGMzMvvYN3UXQHeJeEH");
 
 pub const VERSION_MAJOR: u32 = 1;
 pub const VERSION_MINOR: u32 = 0;

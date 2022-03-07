@@ -29,9 +29,6 @@ async function main() {
 
     console.log('Create Metadata')
     await netAuthority.rpc.storeMetadata(
-        true,
-        new anchor.BN(infoBytes),
-        new anchor.BN(infoRent),
         "Network Authority",
         "Atellix Network",
         "https://atellix.network/",
