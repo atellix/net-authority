@@ -28,7 +28,7 @@ async function main() {
     console.log((new PublicKey(infoData.pubkey)).toString(), infoBytes, infoRent)
 
     console.log('Create Metadata')
-    await netAuthority.rpc.storeMetadata(
+    console.log(await netAuthority.rpc.storeMetadata(
         "Network Authority",
         "Atellix Network",
         "https://atellix.network/",
@@ -43,7 +43,7 @@ async function main() {
                 systemProgram: SystemProgram.programId
             }
         }
-    )
+    ))
 }
 
 console.log('Begin')
