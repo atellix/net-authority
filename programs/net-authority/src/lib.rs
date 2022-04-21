@@ -9,11 +9,11 @@ use solana_program::{ account_info::AccountInfo };
 extern crate slab_alloc;
 use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, SlabVec, SlabTreeError };
 
-declare_id!("AUTHXb39qs2VyztqH9zqh3LLLVGMzMvvYN3UXQHeJeEH");
+declare_id!("AmWQ4xscdgt6Zqygu27yVQaP9Kxu9yAPysFLrpyWKXZ8");
 
 pub const VERSION_MAJOR: u32 = 1;
-pub const VERSION_MINOR: u32 = 0;
-pub const VERSION_PATCH: u32 = 1;
+pub const VERSION_MINOR: u32 = 1;
+pub const VERSION_PATCH: u32 = 0;
 
 pub const MAX_RBAC: u32 = 128;
 
@@ -38,6 +38,7 @@ pub enum Role {             // Role-based access control:
     ManagerAdmin,           // Can create/modify manager approvals (processes subscriptions)
     MerchantAdmin,          // Can create/modify merchant approvals (receives subscription payments)
     RevenueAdmin,           // Can register merchant revenue (trusted contract internal PDAs)
+    TokenAdmin,             // Can create/modify security token trading approvals
 }
 
 #[derive(Copy, Clone)]
@@ -523,6 +524,29 @@ mod net_authority {
         msg!("Closed Manager Approval: {}", ctx.accounts.manager_approval.to_account_info().key.to_string());
         Ok(())
     }
+
+    pub fn approve_token(ctx: Context<ApproveToken>,
+        _inp_root_nonce: u8,
+    ) -> anchor_lang::Result<()> {
+        let acc_admn = &ctx.accounts.token_admin.to_account_info(); // Token admin
+        let acc_auth = &ctx.accounts.auth_data.to_account_info();
+
+        // Check for ManagerAdmin authority
+        let admin_role = has_role(&acc_auth, Role::TokenAdmin, acc_admn.key);
+        if admin_role.is_err() {
+            msg!("Not token admin");
+            return Err(ErrorCode::AccessDenied.into());
+        }
+
+        // Create approval account
+        let aprv = &mut ctx.accounts.approval;
+        aprv.active = true;
+        aprv.owner = *ctx.accounts.owner.to_account_info().key;
+        aprv.group = *ctx.accounts.group.to_account_info().key;
+        // TODO: Logging
+
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -700,6 +724,24 @@ pub struct CloseManagerApproval<'info> {
     pub manager_approval: Account<'info, ManagerApproval>,
 }
 
+#[derive(Accounts)]
+#[instruction(_inp_root_nonce: u8)]
+pub struct ApproveToken<'info> {
+    #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
+    pub root_data: Account<'info, RootData>,
+    #[account(constraint = root_data.root_authority == auth_data.key())]
+    pub auth_data: UncheckedAccount<'info>,
+    #[account(signer)]
+    pub token_admin: AccountInfo<'info>,
+    pub owner: UncheckedAccount<'info>,
+    pub group: UncheckedAccount<'info>,
+    #[account(init_if_needed, payer = fee_payer, seeds = [owner.key.as_ref(), group.key.as_ref()], bump, space = 73)]
+    pub approval: Account<'info, TokenGroupApproval>,
+    #[account(mut)]
+    pub fee_payer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
 #[account]
 pub struct RootData {
     pub root_authority: Pubkey,
@@ -781,6 +823,24 @@ pub struct MerchantDetails {
 }
 // 8 + 1 + 32 + (4 * 3) + 64 + (128 * 2)
 // Data length (with discrim): 373 bytes
+
+#[account]
+pub struct TokenGroupApproval {
+    pub active: bool,
+    pub owner: Pubkey,
+    pub group: Pubkey,
+}
+// Size: 8 + 1 + 32 + 32 = 73
+
+impl Default for TokenGroupApproval {
+    fn default() -> Self {
+        Self {
+            active: false,
+            owner: Pubkey::default(),
+            group: Pubkey::default(),
+        }
+    }
+}
 
 #[account]
 pub struct ProgramMetadata {
