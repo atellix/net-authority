@@ -38,7 +38,7 @@ pub enum Role {             // Role-based access control:
     ManagerAdmin,           // Can create/modify manager approvals (processes subscriptions)
     MerchantAdmin,          // Can create/modify merchant approvals (receives subscription payments)
     RevenueAdmin,           // Can register merchant revenue (trusted contract internal PDAs)
-    TokenAdmin,             // Can create/modify security token trading approvals
+    TokenGroupAdmin,        // Can create/modify security token trading approvals by group
 }
 
 #[derive(Copy, Clone)]
@@ -525,14 +525,14 @@ mod net_authority {
         Ok(())
     }
 
-    pub fn approve_token(ctx: Context<ApproveToken>,
+    pub fn approve_token_group(ctx: Context<ApproveTokenGroup>,
         _inp_root_nonce: u8,
     ) -> anchor_lang::Result<()> {
         let acc_admn = &ctx.accounts.token_admin.to_account_info(); // Token admin
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
 
-        // Check for ManagerAdmin authority
-        let admin_role = has_role(&acc_auth, Role::TokenAdmin, acc_admn.key);
+        // Check for TokenGroupAdmin authority
+        let admin_role = has_role(&acc_auth, Role::TokenGroupAdmin, acc_admn.key);
         if admin_role.is_err() {
             msg!("Not token admin");
             return Err(ErrorCode::AccessDenied.into());
@@ -545,6 +545,45 @@ mod net_authority {
         aprv.group = *ctx.accounts.group.to_account_info().key;
         // TODO: Logging
 
+        Ok(())
+    }
+
+    pub fn update_token_group_approval(ctx: Context<UpdateTokenGroupApproval>,
+        _inp_root_nonce: u8,
+        inp_active: bool,
+    ) -> anchor_lang::Result<()> {
+        let acc_admn = &ctx.accounts.token_admin.to_account_info(); // Token admin
+        let acc_auth = &ctx.accounts.auth_data.to_account_info();
+
+        // Check for TokenGroupAdmin authority
+        let admin_role = has_role(&acc_auth, Role::TokenGroupAdmin, acc_admn.key);
+        if admin_role.is_err() {
+            msg!("Not token admin");
+            return Err(ErrorCode::AccessDenied.into());
+        }
+
+        // Update approval account
+        let aprv = &mut ctx.accounts.approval;
+        aprv.active = inp_active;
+
+        // TODO: Logging
+        Ok(())
+    }
+
+    pub fn close_token_group_approval(ctx: Context<CloseTokenGroupApproval>,
+        _inp_root_nonce: u8,
+    ) -> anchor_lang::Result<()> {
+        let acc_admn = &ctx.accounts.token_admin.to_account_info(); // Token admin
+        let acc_auth = &ctx.accounts.auth_data.to_account_info();
+
+        // Check for TokenGroupAdmin authority
+        let admin_role = has_role(&acc_auth, Role::TokenGroupAdmin, acc_admn.key);
+        if admin_role.is_err() {
+            msg!("Not token admin");
+            return Err(ErrorCode::AccessDenied.into());
+        }
+
+        // TODO: Logging
         Ok(())
     }
 }
@@ -726,7 +765,7 @@ pub struct CloseManagerApproval<'info> {
 
 #[derive(Accounts)]
 #[instruction(_inp_root_nonce: u8)]
-pub struct ApproveToken<'info> {
+pub struct ApproveTokenGroup<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
     #[account(constraint = root_data.root_authority == auth_data.key())]
@@ -740,6 +779,34 @@ pub struct ApproveToken<'info> {
     #[account(mut)]
     pub fee_payer: Signer<'info>,
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(_inp_root_nonce: u8)]
+pub struct UpdateTokenGroupApproval<'info> {
+    #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
+    pub root_data: Account<'info, RootData>,
+    #[account(constraint = root_data.root_authority == auth_data.key())]
+    pub auth_data: UncheckedAccount<'info>,
+    #[account(signer)]
+    pub token_admin: AccountInfo<'info>,
+    #[account(mut)]
+    pub approval: Account<'info, TokenGroupApproval>,
+}
+
+#[derive(Accounts)]
+#[instruction(_inp_root_nonce: u8)]
+pub struct CloseTokenGroupApproval<'info> {
+    #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
+    pub root_data: Account<'info, RootData>,
+    #[account(constraint = root_data.root_authority == auth_data.key())]
+    pub auth_data: UncheckedAccount<'info>,
+    #[account(signer)]
+    pub token_admin: AccountInfo<'info>,
+    #[account(mut)]
+    pub fee_receiver: Signer<'info>,
+    #[account(mut, close = fee_receiver)]
+    pub approval: Account<'info, TokenGroupApproval>,
 }
 
 #[account]
