@@ -19,6 +19,7 @@ const netAuthorityPK = netAuthority.programId
 async function main() {
     const netData = await jsonFileRead('../../data/net.json')
     const rootData = await programAddress([netAuthorityPK.toBuffer()], netAuthorityPK)
+    const tknAdmin = importSecretKey(netData['merchantAdmin1_secret'])
 
     const owner = new PublicKey('G9GUQuEKS6oJsZspUrAJ1aWFqp1SPq5tgCja4wpMueyX')
     const group = new PublicKey('91Q2u3RvAp64qB9H84gFnUmwkT1s4MZSXWxu7PMZ6Wre')
@@ -43,7 +44,7 @@ async function main() {
             }
         )
     )
-    await provider.send(tx, [mchAdmin, mrchApproval1])
+    console.log(await provider.send(tx, [tknAdmin]))
 }
 
 console.log('Begin')
