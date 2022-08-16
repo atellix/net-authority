@@ -22,21 +22,22 @@ async function main() {
     const tknAdmin = importSecretKey(netData['merchantAdmin1_secret'])
 
     const owner = new PublicKey('G9GUQuEKS6oJsZspUrAJ1aWFqp1SPq5tgCja4wpMueyX')
-    const group = new PublicKey('91Q2u3RvAp64qB9H84gFnUmwkT1s4MZSXWxu7PMZ6Wre')
+    const group = new PublicKey('DGzjPXnFFNw18FXSuMJVfwBThxBU2ohc2gAwsf2Z6FgA')
 
     const tokenApproval = await programAddress([owner.toBuffer(), group.toBuffer()], netAuthorityPK)
     console.log('Approve Owner 1: ' + tokenApproval.pubkey)
     const tx = new anchor.web3.Transaction()
     tx.add(
-        netAuthority.instruction.approveTokenGroup(
+        netAuthority.instruction.approveToken(
             rootData.nonce,
+            true, // true = group, false = mint
             {
                 accounts: {
                     rootData: new PublicKey(rootData.pubkey),
                     authData: new PublicKey(netData.netAuthorityRBAC),
                     tokenAdmin: tknAdmin.publicKey,
                     owner: owner,
-                    group: group,
+                    context: group,
                     approval: new PublicKey(tokenApproval.pubkey),
                     feePayer: provider.wallet.publicKey,
                     systemProgram: SystemProgram.programId,
