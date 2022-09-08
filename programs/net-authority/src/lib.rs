@@ -338,19 +338,18 @@ mod net_authority {
         aprv.merchant_key = *ctx.accounts.merchant_key.to_account_info().key;
         aprv.token_mint = *ctx.accounts.token_mint.to_account_info().key;
         aprv.fees_account = *ctx.accounts.fees_account.to_account_info().key;
-        aprv.revenue_admin = *ctx.accounts.revenue_admin.to_account_info().key;
-        aprv.swap_admin = *ctx.accounts.swap_admin.to_account_info().key;
-        aprv.fees_bps = inp_fees_bps;
-        aprv.revenue = 0;
+        aprv.dest_account = *ctx.accounts.dest_account.to_account_info().key;
+        aprv.tx_admin = *ctx.accounts.tx_admin.to_account_info().key;
         aprv.tx_count = 0;
+        aprv.fees_bps = inp_fees_bps;
 
         Ok(())
     }
 
     pub fn update_merchant(ctx: Context<UpdateMerchant>,
         _inp_root_nonce: u8,
-        inp_fees_bps: u32,
-        inp_active: bool,
+       inp_fees_bps: u32,
+       inp_active: bool,
     ) -> anchor_lang::Result<()> {
         let acc_admn = &ctx.accounts.merchant_admin.to_account_info(); // Merchant admin
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
@@ -365,10 +364,10 @@ mod net_authority {
         // Update approval account
         let aprv = &mut ctx.accounts.merchant_approval;
         aprv.active = inp_active;
+        aprv.tx_admin = *ctx.accounts.tx_admin.to_account_info().key;
+        aprv.dest_account = *ctx.accounts.dest_account.to_account_info().key;
         aprv.fees_account = *ctx.accounts.fees_account.to_account_info().key;
         aprv.fees_bps = inp_fees_bps;
-        aprv.revenue_admin = *ctx.accounts.revenue_admin.to_account_info().key;
-        aprv.swap_admin = *ctx.accounts.swap_admin.to_account_info().key;
 
         Ok(())
     }
@@ -438,11 +437,8 @@ mod net_authority {
         Ok(())
     }
 
-    pub fn record_revenue(ctx: Context<RecordRevenue>,
-        inp_incoming: bool,
-        inp_amount: u64,
-    ) -> anchor_lang::Result<()> {
-        let acc_admn = &ctx.accounts.revenue_admin.to_account_info(); // Revenue admin
+    pub fn record_tx(ctx: Context<RecordTransaction>) -> anchor_lang::Result<()> {
+        let acc_admn = &ctx.accounts.tx_admin.to_account_info(); // Revenue admin
         //msg!("Atellix: Update merchant revenue: {}", inp_amount.to_string());
 
         // Update approval account
@@ -450,13 +446,6 @@ mod net_authority {
         if !acc_aprv.active {
             msg!("Inactive merchant");
             return Err(ErrorCode::AccessDenied.into());
-        }
-        if inp_incoming {
-            verify_matching_accounts(&acc_aprv.revenue_admin, acc_admn.key, Some(String::from("Invalid revenue admin")))?;
-            acc_aprv.revenue = acc_aprv.revenue.checked_add(inp_amount as u64).ok_or(error!(ErrorCode::Overflow))?;
-        } else {
-            verify_matching_accounts(&acc_aprv.swap_admin, acc_admn.key, Some(String::from("Invalid swap admin")))?;
-            acc_aprv.revenue = acc_aprv.revenue.checked_sub(inp_amount as u64).ok_or(error!(ErrorCode::Overflow))?;
         }
 
         // Increment transaction counter
@@ -577,13 +566,13 @@ pub struct ApproveMerchant<'info> {
     pub auth_data: UncheckedAccount<'info>,
     #[account(mut)]
     pub merchant_admin: Signer<'info>,
-    #[account(init, payer = merchant_admin, space = 189)]
+    #[account(init, payer = merchant_admin, space = 181)]
     pub merchant_approval: Account<'info, MerchantApproval>,
     pub merchant_key: UncheckedAccount<'info>,
     pub token_mint: UncheckedAccount<'info>,
     pub fees_account: UncheckedAccount<'info>,
-    pub revenue_admin: UncheckedAccount<'info>,
-    pub swap_admin: UncheckedAccount<'info>,
+    pub dest_account: UncheckedAccount<'info>,
+    pub tx_admin: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
 }
 
@@ -599,8 +588,8 @@ pub struct UpdateMerchant<'info> {
     #[account(mut)]
     pub merchant_approval: Account<'info, MerchantApproval>,
     pub fees_account: UncheckedAccount<'info>,
-    pub revenue_admin: UncheckedAccount<'info>,
-    pub swap_admin: UncheckedAccount<'info>,
+    pub dest_account: UncheckedAccount<'info>,
+    pub tx_admin: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -651,8 +640,8 @@ pub struct CloseMerchantDetails<'info> {
 }
 
 #[derive(Accounts)]
-pub struct RecordRevenue<'info> {
-    pub revenue_admin: Signer<'info>,
+pub struct RecordTransaction<'info> {
+    pub tx_admin: Signer<'info>,
     #[account(mut)]
     pub merchant_approval: Account<'info, MerchantApproval>,
 }
@@ -730,13 +719,12 @@ pub struct MerchantApproval {
     pub merchant_key: Pubkey,
     pub token_mint: Pubkey,
     pub fees_account: Pubkey,
-    pub revenue_admin: Pubkey,
-    pub swap_admin: Pubkey,
-    pub fees_bps: u32,
-    pub revenue: u64,
+    pub dest_account: Pubkey,
+    pub tx_admin: Pubkey,
     pub tx_count: u64,
+    pub fees_bps: u32,
 }
-// Size: 8 + 1 + 32 + 32 + 32 + 32 + 32 + 4 + 8 + 8 = 189
+// Size: 8 + 1 + 32 + 32 + 32 + 32 + 32 + 8 + 4 = 181
 
 impl Default for MerchantApproval {
     fn default() -> Self {
@@ -745,11 +733,10 @@ impl Default for MerchantApproval {
             merchant_key: Pubkey::default(),
             token_mint: Pubkey::default(),
             fees_account: Pubkey::default(),
-            revenue_admin: Pubkey::default(),
-            swap_admin: Pubkey::default(),
-            fees_bps: 0,
-            revenue: 0,
+            dest_account: Pubkey::default(),
+            tx_admin: Pubkey::default(),
             tx_count: 0,
+            fees_bps: 0,
         }
     }
 }

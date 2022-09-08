@@ -16,11 +16,11 @@ cpi = ["no-entrypoint"]
 default = ["no-log-ix-name"]
 
 [dependencies]
-anchor-lang = { version = "0.24.2", features = ["init-if-needed"] }
+anchor-lang = { version = "0.25.0", features = ["init-if-needed"] }
 bytemuck = "1.7.2"
 uuid = "0.8.2"
 num_enum = "0.5.4"
 byte-slice-cast = "1.0.0"
-solana-program = "1.9.29"
+solana-program = "1.10.29"
 slab-alloc = { version = "1.0.0", path = "/Users/mfrager/Build/solana/crates/slab-alloc" }
 
