@@ -13,47 +13,26 @@ const { associatedTokenAddress, programAddress, importSecretKey, exportSecretKey
 const provider = anchor.Provider.env()
 //const provider = anchor.Provider.local()
 anchor.setProvider(provider)
-const netAuthority = anchor.workspace.NetAuthority
-const netAuthorityPK = netAuthority.programId
+//const netAuthority = anchor.workspace.NetAuthority
+//const netAuthorityPK = netAuthority.programId
 
 async function main() {
-    const netKeys = await jsonFileRead('../../data/export/network_keys.json')
-    const netData = await jsonFileRead('../../data/net.json')
+    const ataBytes = 165
+    const ataRent = await provider.connection.getMinimumBalanceForRentExemption(ataBytes)
 
-    const rootData = await programAddress([netAuthorityPK.toBuffer()], netAuthorityPK)
-    const mchAdmin = importSecretKey(netKeys['merchant-admin-1-secret'])
-    const merchantPK = new PublicKey(netData.merchant1)
+    const aprvBytes = 181
+    const aprvRent = await provider.connection.getMinimumBalanceForRentExemption(aprvBytes)
 
-    const infoData = await programAddress([merchantPK.toBuffer(), Buffer.from('merchant-details', 'utf8')], netAuthorityPK)
     const infoBytes = 373
     const infoRent = await provider.connection.getMinimumBalanceForRentExemption(infoBytes)
-    console.log('Merchant Details')
-    console.log((new PublicKey(infoData.pubkey)).toString(), infoBytes, infoRent)
 
-    console.log('Create Merchant Details')
-    let res = await netAuthority.rpc.storeMerchantDetails(
-        rootData.nonce,
-        false, // create
-        false,
-        new anchor.BN(infoBytes),
-        new anchor.BN(infoRent),
-        "SavvyCo, Inc.",
-        "https://savvyco.com/",
-        "",
-        {
-            accounts: {
-                feePayer: provider.wallet.publicKey,
-                rootData: new PublicKey(rootData.pubkey),
-                authData: new PublicKey(netData.netAuthorityRBAC),
-                merchantAdmin: mchAdmin.publicKey,
-                merchantInfo: new PublicKey(infoData.pubkey),
-                merchantKey: merchantPK,
-                systemProgram: SystemProgram.programId
-            },
-            signers: [mchAdmin],
-        }
-    )
-    console.log(res)
+    const totalRent = ataRent + aprvRent + infoRent
+    const totalCost = totalRent + (0.00001 * 10**9 * 3)
+    console.log("ATA Rent: " + ataRent)
+    console.log("Approval Rent: " + aprvRent)
+    console.log("Info Rent: " + infoRent)
+    console.log("Total Rent: " + totalRent)
+    console.log("Total Cost: " + totalCost)
 }
 
 console.log('Begin')

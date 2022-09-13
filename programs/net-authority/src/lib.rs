@@ -448,6 +448,8 @@ mod net_authority {
             return Err(ErrorCode::AccessDenied.into());
         }
 
+        verify_matching_accounts(&acc_aprv.tx_admin, acc_admn.key, Some(String::from("Invalid transaction admin")))?;
+
         // Increment transaction counter
         acc_aprv.tx_count = acc_aprv.tx_count.checked_add(1).ok_or(error!(ErrorCode::Overflow))?;
 

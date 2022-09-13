@@ -30,6 +30,7 @@ async function main() {
     const swapAdmin = await programAddress([swapProgram.toBuffer()], swapProgram)
 
     const tokenMint = new PublicKey(netData['tokenMintUSDV'])
+    const destAccount = new PublicKey(netData['merchant1_dest'])
     // TODO: Fund associated token account for all relevant mints
 
     const mrchApproval1 = importSecretKey(netData['merchantApproval1_secret'])
@@ -46,7 +47,7 @@ async function main() {
     tx.add(
         netAuthority.instruction.approveMerchant(
             rootData.nonce,
-            100,
+            0,
             {
                 accounts: {
                     rootData: new PublicKey(rootData.pubkey),
@@ -56,8 +57,8 @@ async function main() {
                     merchantKey: new PublicKey(netData.merchant1),
                     tokenMint: tokenMint,
                     feesAccount: new PublicKey(netData.fees1_token),
-                    revenueAdmin: new PublicKey(revenueAdmin.pubkey),
-                    swapAdmin: new PublicKey(swapAdmin.pubkey),
+                    destAccount: destAccount,
+                    txAdmin: new PublicKey(revenueAdmin.pubkey),
                     systemProgram: SystemProgram.programId,
                 },
             }
