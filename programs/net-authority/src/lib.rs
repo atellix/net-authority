@@ -558,6 +558,7 @@ pub struct UpdateRBAC<'info> {
     pub program_data: Account<'info, ProgramData>,
     #[account(mut)]
     pub program_admin: Signer<'info>,
+    /// CHECK: ok
     pub rbac_user: AccountInfo<'info>,
 }
 
@@ -689,6 +690,7 @@ pub struct UpdateManager<'info> {
     /// CHECK: ok
     #[account(constraint = root_data.root_authority == auth_data.key())]
     pub auth_data: UncheckedAccount<'info>,
+    /// CHECK: ok
     #[account(signer)]
     pub manager_admin: AccountInfo<'info>,
     #[account(mut)]
