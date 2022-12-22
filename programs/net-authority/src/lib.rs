@@ -12,7 +12,7 @@ use slab_alloc::{ SlabPageAlloc, CritMapHeader, CritMap, AnyNode, LeafNode, Slab
 declare_id!("AUTHXb39qs2VyztqH9zqh3LLLVGMzMvvYN3UXQHeJeEH");
 
 pub const VERSION_MAJOR: u32 = 1;
-pub const VERSION_MINOR: u32 = 1;
+pub const VERSION_MINOR: u32 = 0;
 pub const VERSION_PATCH: u32 = 0;
 
 pub const MAX_RBAC: u32 = 128;
