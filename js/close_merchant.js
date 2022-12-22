@@ -32,7 +32,7 @@ async function main() {
                 authData: new PublicKey(netData.netAuthorityRBAC),
                 feeReceiver: provider.wallet.publicKey,
                 merchantAdmin: mchAdmin.publicKey,
-                merchantApproval: new PublicKey('9fmPkK5b8XU3n8CVsuejyGt7T8WzyZLMUzPCNxwnEDhU'),
+                merchantApproval: new PublicKey('FSmwWnCZQ9STM3Bm78Xrwx6bHvhwbTxX33GdX9McKKNA'),
             },
             signers: [mchAdmin],
         }

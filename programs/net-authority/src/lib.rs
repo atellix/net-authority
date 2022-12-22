@@ -339,19 +339,18 @@ mod net_authority {
         aprv.merchant_key = *ctx.accounts.merchant_key.to_account_info().key;
         aprv.token_mint = *ctx.accounts.token_mint.to_account_info().key;
         aprv.fees_account = *ctx.accounts.fees_account.to_account_info().key;
-        aprv.revenue_admin = *ctx.accounts.revenue_admin.to_account_info().key;
-        aprv.swap_admin = *ctx.accounts.swap_admin.to_account_info().key;
-        aprv.fees_bps = inp_fees_bps;
-        aprv.revenue = 0;
+        aprv.dest_account = *ctx.accounts.dest_account.to_account_info().key;
+        aprv.tx_admin = *ctx.accounts.tx_admin.to_account_info().key;
         aprv.tx_count = 0;
+        aprv.fees_bps = inp_fees_bps;
 
         Ok(())
     }
 
     pub fn update_merchant(ctx: Context<UpdateMerchant>,
         _inp_root_nonce: u8,
-        inp_fees_bps: u32,
-        inp_active: bool,
+       inp_fees_bps: u32,
+       inp_active: bool,
     ) -> anchor_lang::Result<()> {
         let acc_admn = &ctx.accounts.merchant_admin.to_account_info(); // Merchant admin
         let acc_auth = &ctx.accounts.auth_data.to_account_info();
@@ -366,10 +365,10 @@ mod net_authority {
         // Update approval account
         let aprv = &mut ctx.accounts.merchant_approval;
         aprv.active = inp_active;
+        aprv.tx_admin = *ctx.accounts.tx_admin.to_account_info().key;
+        aprv.dest_account = *ctx.accounts.dest_account.to_account_info().key;
         aprv.fees_account = *ctx.accounts.fees_account.to_account_info().key;
         aprv.fees_bps = inp_fees_bps;
-        aprv.revenue_admin = *ctx.accounts.revenue_admin.to_account_info().key;
-        aprv.swap_admin = *ctx.accounts.swap_admin.to_account_info().key;
 
         Ok(())
     }
@@ -439,11 +438,8 @@ mod net_authority {
         Ok(())
     }
 
-    pub fn record_revenue(ctx: Context<RecordRevenue>,
-        inp_incoming: bool,
-        inp_amount: u64,
-    ) -> anchor_lang::Result<()> {
-        let acc_admn = &ctx.accounts.revenue_admin.to_account_info(); // Revenue admin
+    pub fn record_tx(ctx: Context<RecordTransaction>) -> anchor_lang::Result<()> {
+        let acc_admn = &ctx.accounts.tx_admin.to_account_info(); // Revenue admin
         //msg!("Atellix: Update merchant revenue: {}", inp_amount.to_string());
 
         // Update approval account
@@ -452,13 +448,8 @@ mod net_authority {
             msg!("Inactive merchant");
             return Err(ErrorCode::AccessDenied.into());
         }
-        if inp_incoming {
-            verify_matching_accounts(&acc_aprv.revenue_admin, acc_admn.key, Some(String::from("Invalid revenue admin")))?;
-            acc_aprv.revenue = acc_aprv.revenue.checked_add(inp_amount as u64).ok_or(error!(ErrorCode::Overflow))?;
-        } else {
-            verify_matching_accounts(&acc_aprv.swap_admin, acc_admn.key, Some(String::from("Invalid swap admin")))?;
-            acc_aprv.revenue = acc_aprv.revenue.checked_sub(inp_amount as u64).ok_or(error!(ErrorCode::Overflow))?;
-        }
+
+        verify_matching_accounts(&acc_aprv.tx_admin, acc_admn.key, Some(String::from("Invalid transaction admin")))?;
 
         // Increment transaction counter
         acc_aprv.tx_count = acc_aprv.tx_count.checked_add(1).ok_or(error!(ErrorCode::Overflow))?;
@@ -597,8 +588,9 @@ mod net_authority {
 pub struct Initialize<'info> {
     #[account(init, seeds = [program_id.as_ref()], bump, payer = program_admin, space = 40)]
     pub root_data: Account<'info, RootData>,
+    /// CHECK: ok
     #[account(zero)]
-    pub auth_data: UncheckedAccount<'info>,
+    pub auth_data: AccountInfo<'info>,
     #[account(constraint = program.programdata_address().unwrap() == Some(program_data.key()))]
     pub program: Program<'info, NetAuthority>,
     #[account(constraint = program_data.upgrade_authority_address == Some(program_admin.key()))]
@@ -626,13 +618,15 @@ pub struct UpdateMetadata<'info> {
 pub struct UpdateRBAC<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
+    /// CHECK: ok
     #[account(mut, constraint = root_data.root_authority == auth_data.key())]
-    pub auth_data: UncheckedAccount<'info>,
+    pub auth_data: AccountInfo<'info>,
     #[account(constraint = program.programdata_address().unwrap() == Some(program_data.key()))]
     pub program: Program<'info, NetAuthority>,
     pub program_data: Account<'info, ProgramData>,
     #[account(mut)]
     pub program_admin: Signer<'info>,
+    /// CHECK: ok
     pub rbac_user: AccountInfo<'info>,
 }
 
@@ -641,17 +635,23 @@ pub struct UpdateRBAC<'info> {
 pub struct ApproveMerchant<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
+    /// CHECK: ok
     #[account(constraint = root_data.root_authority == auth_data.key())]
-    pub auth_data: UncheckedAccount<'info>,
+    pub auth_data: AccountInfo<'info>,
     #[account(mut)]
     pub merchant_admin: Signer<'info>,
-    #[account(init, payer = merchant_admin, space = 189)]
+    #[account(init, payer = merchant_admin, space = 181)]
     pub merchant_approval: Account<'info, MerchantApproval>,
-    pub merchant_key: UncheckedAccount<'info>,
-    pub token_mint: UncheckedAccount<'info>,
-    pub fees_account: UncheckedAccount<'info>,
-    pub revenue_admin: UncheckedAccount<'info>,
-    pub swap_admin: UncheckedAccount<'info>,
+    /// CHECK: ok
+    pub merchant_key: AccountInfo<'info>,
+    /// CHECK: ok
+    pub token_mint: AccountInfo<'info>,
+    /// CHECK: ok
+    pub fees_account: AccountInfo<'info>,
+    /// CHECK: ok
+    pub dest_account: AccountInfo<'info>,
+    /// CHECK: ok
+    pub tx_admin: AccountInfo<'info>,
     pub system_program: Program<'info, System>,
 }
 
@@ -660,15 +660,19 @@ pub struct ApproveMerchant<'info> {
 pub struct UpdateMerchant<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
+    /// CHECK: ok
     #[account(constraint = root_data.root_authority == auth_data.key())]
-    pub auth_data: UncheckedAccount<'info>,
+    pub auth_data: AccountInfo<'info>,
     #[account(mut)]
     pub merchant_admin: Signer<'info>,
     #[account(mut)]
     pub merchant_approval: Account<'info, MerchantApproval>,
-    pub fees_account: UncheckedAccount<'info>,
-    pub revenue_admin: UncheckedAccount<'info>,
-    pub swap_admin: UncheckedAccount<'info>,
+    /// CHECK: ok
+    pub fees_account: AccountInfo<'info>,
+    /// CHECK: ok
+    pub dest_account: AccountInfo<'info>,
+    /// CHECK: ok
+    pub tx_admin: AccountInfo<'info>,
 }
 
 #[derive(Accounts)]
@@ -676,8 +680,9 @@ pub struct UpdateMerchant<'info> {
 pub struct CloseMerchantApproval<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
+    /// CHECK: ok
     #[account(constraint = root_data.root_authority == auth_data.key())]
-    pub auth_data: UncheckedAccount<'info>,
+    pub auth_data: AccountInfo<'info>,
     #[account(mut)]
     pub merchant_admin: Signer<'info>,
     #[account(mut)]
@@ -691,13 +696,15 @@ pub struct CloseMerchantApproval<'info> {
 pub struct UpdateMerchantDetails<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
+    /// CHECK: ok
     #[account(constraint = root_data.root_authority == auth_data.key())]
-    pub auth_data: UncheckedAccount<'info>,
+    pub auth_data: AccountInfo<'info>,
     #[account(mut)]
     pub fee_payer: Signer<'info>,
     #[account(mut)]
     pub merchant_admin: Signer<'info>,
-    pub merchant_key: UncheckedAccount<'info>,
+    /// CHECK: ok
+    pub merchant_key: AccountInfo<'info>,
     #[account(init_if_needed, payer = fee_payer, seeds = [merchant_key.key.as_ref(), b"merchant-details"], bump, space = 373)]
     pub merchant_info: Account<'info, MerchantDetails>,
     pub system_program: Program<'info, System>,
@@ -708,8 +715,9 @@ pub struct UpdateMerchantDetails<'info> {
 pub struct CloseMerchantDetails<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
+    /// CHECK: ok
     #[account(constraint = root_data.root_authority == auth_data.key())]
-    pub auth_data: UncheckedAccount<'info>,
+    pub auth_data: AccountInfo<'info>,
     #[account(mut)]
     pub merchant_admin: Signer<'info>,
     #[account(mut)]
@@ -719,8 +727,8 @@ pub struct CloseMerchantDetails<'info> {
 }
 
 #[derive(Accounts)]
-pub struct RecordRevenue<'info> {
-    pub revenue_admin: Signer<'info>,
+pub struct RecordTransaction<'info> {
+    pub tx_admin: Signer<'info>,
     #[account(mut)]
     pub merchant_approval: Account<'info, MerchantApproval>,
 }
@@ -730,13 +738,15 @@ pub struct RecordRevenue<'info> {
 pub struct ApproveManager<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
+    /// CHECK: ok
     #[account(constraint = root_data.root_authority == auth_data.key())]
-    pub auth_data: UncheckedAccount<'info>,
+    pub auth_data: AccountInfo<'info>,
     #[account(mut)]
     pub manager_admin: Signer<'info>,
     #[account(init, payer = manager_admin, space = 41)]
     pub manager_approval: Account<'info, ManagerApproval>,
-    pub manager_key: UncheckedAccount<'info>,
+    /// CHECK: ok
+    pub manager_key: AccountInfo<'info>,
     pub system_program: Program<'info, System>,
 }
 
@@ -745,8 +755,10 @@ pub struct ApproveManager<'info> {
 pub struct UpdateManager<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
+    /// CHECK: ok
     #[account(constraint = root_data.root_authority == auth_data.key())]
-    pub auth_data: UncheckedAccount<'info>,
+    pub auth_data: AccountInfo<'info>,
+    /// CHECK: ok
     #[account(signer)]
     pub manager_admin: AccountInfo<'info>,
     #[account(mut)]
@@ -758,8 +770,9 @@ pub struct UpdateManager<'info> {
 pub struct CloseManagerApproval<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
+    /// CHECK: ok
     #[account(constraint = root_data.root_authority == auth_data.key())]
-    pub auth_data: UncheckedAccount<'info>,
+    pub auth_data: AccountInfo<'info>,
     #[account(mut)]
     pub manager_admin: Signer<'info>,
     #[account(mut)]
@@ -773,12 +786,16 @@ pub struct CloseManagerApproval<'info> {
 pub struct ApproveToken<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
+    /// CHECK: ok
     #[account(constraint = root_data.root_authority == auth_data.key())]
-    pub auth_data: UncheckedAccount<'info>,
+    pub auth_data: AccountInfo<'info>,
+    /// CHECK: ok
     #[account(signer)]
     pub token_admin: AccountInfo<'info>,
-    pub owner: UncheckedAccount<'info>,
-    pub context: UncheckedAccount<'info>,
+    /// CHECK: ok
+    pub owner: AccountInfo<'info>,
+    /// CHECK: ok
+    pub context: AccountInfo<'info>,
     #[account(init_if_needed, payer = fee_payer, seeds = [owner.key.as_ref(), context.key.as_ref()], bump, space = 73)]
     pub approval: Account<'info, TokenApproval>,
     #[account(mut)]
@@ -791,8 +808,10 @@ pub struct ApproveToken<'info> {
 pub struct UpdateTokenApproval<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
+    /// CHECK: ok
     #[account(constraint = root_data.root_authority == auth_data.key())]
-    pub auth_data: UncheckedAccount<'info>,
+    pub auth_data: AccountInfo<'info>,
+    /// CHECK: ok
     #[account(signer)]
     pub token_admin: AccountInfo<'info>,
     #[account(mut)]
@@ -804,8 +823,10 @@ pub struct UpdateTokenApproval<'info> {
 pub struct CloseTokenApproval<'info> {
     #[account(seeds = [program_id.as_ref()], bump = _inp_root_nonce)]
     pub root_data: Account<'info, RootData>,
+    /// CHECK: ok
     #[account(constraint = root_data.root_authority == auth_data.key())]
-    pub auth_data: UncheckedAccount<'info>,
+    pub auth_data: AccountInfo<'info>,
+    /// CHECK: ok
     #[account(signer)]
     pub token_admin: AccountInfo<'info>,
     #[account(mut)]
@@ -844,13 +865,12 @@ pub struct MerchantApproval {
     pub merchant_key: Pubkey,
     pub token_mint: Pubkey,
     pub fees_account: Pubkey,
-    pub revenue_admin: Pubkey,
-    pub swap_admin: Pubkey,
-    pub fees_bps: u32,
-    pub revenue: u64,
+    pub dest_account: Pubkey,
+    pub tx_admin: Pubkey,
     pub tx_count: u64,
+    pub fees_bps: u32,
 }
-// Size: 8 + 1 + 32 + 32 + 32 + 32 + 32 + 4 + 8 + 8 = 189
+// Size: 8 + 1 + 32 + 32 + 32 + 32 + 32 + 8 + 4 = 181
 
 impl Default for MerchantApproval {
     fn default() -> Self {
@@ -859,11 +879,10 @@ impl Default for MerchantApproval {
             merchant_key: Pubkey::default(),
             token_mint: Pubkey::default(),
             fees_account: Pubkey::default(),
-            revenue_admin: Pubkey::default(),
-            swap_admin: Pubkey::default(),
-            fees_bps: 0,
-            revenue: 0,
+            dest_account: Pubkey::default(),
+            tx_admin: Pubkey::default(),
             tx_count: 0,
+            fees_bps: 0,
         }
     }
 }
