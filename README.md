@@ -11,9 +11,8 @@
 
 The Network Authority program manages Merchant and Subscription Manager authorization accounts.
 
-Here's why:
-* Verify merchants in real-time using data stored on the Solana blockchain
-* Perform recurring subscriptions securely :smile:
+* Verify merchants in real-time
+* Control recurring subscriptions
 
 ### Built With
 
