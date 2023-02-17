@@ -3,10 +3,7 @@
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
-  <a href="https://github.com/atellix/net-authority">
-    <img src="https://media.atellix.net/atellix_lock_small.png" alt="Logo" width="128" height="128"/>
-  </a>
-  <h3 align="center">Atellix Network Authority</h3>
+  <h3 align="center">Atellix Network RBAC</h3>
 </div>
 
 <!-- ABOUT THIS PROGRAM -->
